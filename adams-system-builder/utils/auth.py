@@ -1,45 +1,36 @@
 """
-Google OAuth for Streamlit — works with any deployment (Coolify, Railway, etc.)
-Set these env vars in Coolify:
-  GOOGLE_CLIENT_ID
-  GOOGLE_CLIENT_SECRET
-  REDIRECT_URI  (e.g. https://yourdomain.com/oauth2callback)
-  ALLOWED_EMAILS  (comma-separated, optional — lock to your Gmail)
+Google OAuth for Streamlit Cloud.
+Streamlit Cloud resets session on redirect, so we skip state validation.
+Security is maintained by locking to ALLOWED_EMAILS only.
 """
 import streamlit as st
 import os
 import requests
-from urllib.parse import urlencode, urlparse, parse_qs
-import hashlib, secrets, json
+from urllib.parse import urlencode
+import secrets
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 def _secret(key: str, default: str = "") -> str:
-    """Read from st.secrets first, then os.environ — works on both Streamlit Cloud and Coolify."""
     try:
         return st.secrets.get(key, os.environ.get(key, default))
     except Exception:
         return os.environ.get(key, default)
 
 def init_auth():
-    if "oauth_state" not in st.session_state:
-        st.session_state.oauth_state = None
     if "user" not in st.session_state:
         st.session_state.user = None
-
-    # Handle OAuth callback via query params
     params = st.query_params
-    if "code" in params and "state" in params:
-        _handle_callback(params["code"], params["state"])
+    if "code" in params:
+        _handle_callback(params["code"])
 
 def _get_redirect_uri():
     return _secret("REDIRECT_URI", "http://localhost:8501")
 
 def _build_auth_url():
-    state = secrets.token_urlsafe(32)
-    st.session_state.oauth_state = state
+    state = secrets.token_urlsafe(16)
     params = {
         "client_id": _secret("GOOGLE_CLIENT_ID"),
         "redirect_uri": _get_redirect_uri(),
@@ -51,10 +42,7 @@ def _build_auth_url():
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
-def _handle_callback(code: str, state: str):
-    if state != st.session_state.get("oauth_state"):
-        st.error("Invalid OAuth state. Please try again.")
-        st.stop()
+def _handle_callback(code: str):
     try:
         token_resp = requests.post(GOOGLE_TOKEN_URL, data={
             "code": code,
@@ -65,25 +53,34 @@ def _handle_callback(code: str, state: str):
         }, timeout=10)
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
+
         if not access_token:
-            st.error(f"Token exchange failed: {token_data}")
-            st.stop()
-        user_resp = requests.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+            st.error(f"Login failed. Please try again. ({token_data.get('error', 'unknown')})")
+            st.query_params.clear()
+            return
+
+        user_resp = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
         user = user_resp.json()
 
-        # Optional: restrict to allowed emails
         allowed = _secret("ALLOWED_EMAILS", "")
         if allowed:
-            allowed_list = [e.strip() for e in allowed.split(",")]
-            if user.get("email") not in allowed_list:
-                st.error(f"❌ Access denied for {user.get('email')}. Contact Adam.")
+            allowed_list = [e.strip().lower() for e in allowed.split(",")]
+            if user.get("email", "").lower() not in allowed_list:
+                st.error(f"Access denied for {user.get('email')}.")
+                st.query_params.clear()
                 st.stop()
 
         st.session_state.user = user
         st.query_params.clear()
         st.rerun()
+
     except Exception as e:
-        st.error(f"Auth error: {e}")
+        st.error(f"Login error: {e}")
+        st.query_params.clear()
 
 def is_authenticated() -> bool:
     return st.session_state.get("user") is not None
@@ -92,9 +89,10 @@ def get_user() -> dict:
     return st.session_state.get("user", {})
 
 def render_login_page():
+    client_id = _secret("GOOGLE_CLIENT_ID")
     st.markdown("""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-    min-height:80vh;gap:24px;">
+    min-height:80vh;gap:24px;text-align:center;">
         <div style="font-size:72px;">⚡</div>
         <h1 style="font-family:'Space Grotesk',sans-serif;font-size:2.8rem;margin:0;
         background:linear-gradient(135deg,#ff4d4d,#ff8c00);
@@ -107,10 +105,8 @@ def render_login_page():
     </div>
     """, unsafe_allow_html=True)
 
-    client_id = _secret("GOOGLE_CLIENT_ID")
     if not client_id:
-        st.warning("⚙️ GOOGLE_CLIENT_ID not set. Add it in Coolify → Environment Variables.")
-        st.code("GOOGLE_CLIENT_ID=your-id-here.apps.googleusercontent.com", language="bash")
+        st.warning("GOOGLE_CLIENT_ID not set. Add it in Streamlit Settings > Secrets.")
         return
 
     auth_url = _build_auth_url()
@@ -121,7 +117,8 @@ def render_login_page():
         color:#333;padding:14px 28px;border-radius:8px;font-weight:600;
         text-decoration:none;border:2px solid #ddd;font-size:1rem;
         box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-            <img src="https://www.google.com/favicon.ico" style="width:18px;vertical-align:middle;margin-right:8px;"/>
+            <img src="https://www.google.com/favicon.ico"
+            style="width:18px;vertical-align:middle;margin-right:8px;"/>
             Sign in with Google
         </a>
         """, unsafe_allow_html=True)
