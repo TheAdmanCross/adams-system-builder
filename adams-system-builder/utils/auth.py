@@ -112,9 +112,10 @@ def render_login_page():
     auth_url = _build_auth_url()
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
+        # Use JS redirect so login stays in same tab
         st.markdown(f"""
-        <a href="{auth_url}" style="display:block;text-align:center;background:#fff;
-        color:#333;padding:14px 28px;border-radius:8px;font-weight:600;
+        <a href="{auth_url}" target="_self" style="display:block;text-align:center;
+        background:#fff;color:#333;padding:14px 28px;border-radius:8px;font-weight:600;
         text-decoration:none;border:2px solid #ddd;font-size:1rem;
         box-shadow:0 2px 8px rgba(0,0,0,0.15);">
             <img src="https://www.google.com/favicon.ico"
