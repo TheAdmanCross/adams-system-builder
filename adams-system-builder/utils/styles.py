@@ -1,9 +1,8 @@
 import streamlit as st
 
 def inject_styles():
-    st.markdown("""
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-    <style>
+    st.markdown("""<style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
     /* ─── Base ─── */
     .stApp { background: #0a0a0f !important; }
     .main .block-container { padding: 2rem 2.5rem; max-width: 1400px; }
