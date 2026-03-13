@@ -4,7 +4,7 @@ Each playbook = Skills + Context + Tools (Cook OS model).
 """
 
 PLAYBOOKS = {
-    "Catholic Archdiocese / Nonprofit": {
+    "Faith-Based / Non-Profit": {
         "icon": "✝️",
         "tag": "archdiocese",
         "description": "98 parishes, 146 schools, 190 social service sites. 16,000+ staff.",
