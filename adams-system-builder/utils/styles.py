@@ -159,6 +159,10 @@ def inject_styles():
 
     /* ─── Divider ─── */
     hr { border-color: #1e1e30 !important; }
+    
+    /* Hide Streamlit sidebar toggle text */
+button[data-testid="collapsedControl"] { display: none !important; }
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
 
     /* ─── Expander ─── */
     .streamlit-expanderHeader { color: #aaa !important; }
