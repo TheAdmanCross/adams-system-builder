@@ -1,24 +1,22 @@
 """
 Google OAuth for Streamlit Cloud.
-Session is persisted in an encrypted browser cookie so page refreshes
-don't log the user out. Cookie expires after 7 days.
+Session token is stored in Supabase and kept in the URL query param (?s=TOKEN)
+so page refreshes restore the session without re-login.
+No extra packages required beyond the existing stack.
 """
 import streamlit as st
 import os
 import requests
 import json
-import base64
-import hashlib
-from urllib.parse import urlencode
-from datetime import datetime, timedelta
 import secrets
+from urllib.parse import urlencode
 
 GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
-COOKIE_NAME    = "asb_session_v1"
+SESSION_PREFIX = "session:"
 
 
 def _secret(key: str, default: str = "") -> str:
@@ -28,42 +26,61 @@ def _secret(key: str, default: str = "") -> str:
         return os.environ.get(key, default)
 
 
-# ─── Cookie helpers ───────────────────────────────────────────────────────────
+# ─── Supabase session store ───────────────────────────────────────────────────
 
-@st.cache_resource
-def _cookie_controller():
-    from streamlit_cookies_controller import CookieController
-    return CookieController()
-
-
-def _fernet():
-    from cryptography.fernet import Fernet
-    secret = _secret("GOOGLE_CLIENT_SECRET", "adam-system-builder-fallback-key!")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
-    return Fernet(key)
-
-
-def _save_cookie(user: dict):
+def _get_supabase():
+    def _s(key):
+        try:
+            return st.secrets.get(key, os.environ.get(key, ""))
+        except Exception:
+            return os.environ.get(key, "")
+    url = _s("SUPABASE_URL")
+    key = _s("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return None
     try:
-        token = _fernet().encrypt(json.dumps(user).encode()).decode()
-        _cookie_controller().set(COOKIE_NAME, token)
+        from supabase import create_client
+        return create_client(url, key)
+    except Exception:
+        return None
+
+
+def _save_session(token: str, user: dict):
+    """Save session token → user data in Supabase settings table."""
+    try:
+        client = _get_supabase()
+        if client:
+            client.table("settings").upsert({
+                "key": f"{SESSION_PREFIX}{token}",
+                "value": json.dumps(user),
+            }).execute()
     except Exception:
         pass
 
 
-def _load_cookie() -> dict:
+def _load_session(token: str) -> dict:
+    """Load user data from Supabase by session token."""
     try:
-        token = _cookie_controller().get(COOKIE_NAME)
-        if token:
-            return json.loads(_fernet().decrypt(token.encode()).decode())
+        client = _get_supabase()
+        if client:
+            resp = client.table("settings").select("value").eq(
+                "key", f"{SESSION_PREFIX}{token}"
+            ).maybe_single().execute()
+            if resp and resp.data:
+                return json.loads(resp.data["value"])
     except Exception:
         pass
     return None
 
 
-def _clear_cookie():
+def _delete_session(token: str):
+    """Remove session token from Supabase on logout."""
     try:
-        _cookie_controller().remove(COOKIE_NAME)
+        client = _get_supabase()
+        if client:
+            client.table("settings").delete().eq(
+                "key", f"{SESSION_PREFIX}{token}"
+            ).execute()
     except Exception:
         pass
 
@@ -74,17 +91,20 @@ def init_auth():
     if "user" not in st.session_state:
         st.session_state.user = None
 
-    # Restore session from cookie on page refresh
-    if not st.session_state.user:
-        saved = _load_cookie()
-        if saved:
-            st.session_state.user = saved
-            return
+    params = st.query_params
 
     # Handle OAuth callback
-    params = st.query_params
     if "code" in params:
         _handle_callback(params["code"])
+        return
+
+    # Restore session from URL token on refresh
+    if not st.session_state.user and "s" in params:
+        token = params["s"]
+        user = _load_session(token)
+        if user:
+            st.session_state.user = user
+            st.session_state.session_token = token
 
 
 def _get_redirect_uri():
@@ -136,9 +156,16 @@ def _handle_callback(code: str):
                 st.query_params.clear()
                 st.stop()
 
+        # Generate session token and persist to Supabase
+        session_token = secrets.token_urlsafe(32)
+        _save_session(session_token, user)
+
         st.session_state.user = user
-        _save_cookie(user)
+        st.session_state.session_token = session_token
+
+        # Set token in URL — survives page refresh
         st.query_params.clear()
+        st.query_params["s"] = session_token
         st.rerun()
 
     except Exception as e:
@@ -155,7 +182,11 @@ def get_user() -> dict:
 
 
 def logout():
-    _clear_cookie()
+    """Clear session from Supabase, URL, and session state."""
+    token = st.session_state.get("session_token")
+    if token:
+        _delete_session(token)
+    st.query_params.clear()
     for key in list(st.session_state.keys()):
         del st.session_state[key]
 
