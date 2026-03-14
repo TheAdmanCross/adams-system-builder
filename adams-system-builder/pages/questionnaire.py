@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.playbooks import get_playbook, list_industries
+from utils.playbooks import get_playbook
 
 def render():
     st.markdown("## 📋 Adaptive Questionnaire")
