@@ -25,6 +25,15 @@ if not is_authenticated():
 user = get_user()
 init_storage()
 
+NAV_OPTIONS = [
+    "🏠  Dashboard",
+    "➕  New Customer",
+    "📋  Questionnaire",
+    "🤖  Agent Builder",
+    "🚀  Generate & Deploy",
+    "⚙️  Settings",
+]
+
 # Sidebar
 with st.sidebar:
     st.markdown(f"""
@@ -38,14 +47,12 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    page = st.radio("", [
-        "🏠  Dashboard",
-        "➕  New Customer",
-        "📋  Questionnaire",
-        "🤖  Agent Builder",
-        "🚀  Generate & Deploy",
-        "⚙️  Settings",
-    ], label_visibility="collapsed")
+    page = st.radio(
+        "",
+        NAV_OPTIONS,
+        label_visibility="collapsed",
+        key="nav_page",
+    )
 
     st.markdown("---")
     if st.button("🚪 Logout", use_container_width=True):
