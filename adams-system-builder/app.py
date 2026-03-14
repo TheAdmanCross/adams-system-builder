@@ -34,8 +34,18 @@ NAV_OPTIONS = [
     "⚙️  Settings",
 ]
 
-# ─── Handle programmatic navigation (_goto = index of NAV_OPTIONS) ────────────
-default_index = st.session_state.pop("_goto", 0)
+# ─── Navigation state ─────────────────────────────────────────────────────────
+# _goto: set by buttons to jump to a page by index
+# _current_page: remembers the last selected page across reruns
+if "_goto" in st.session_state:
+    nav_index = st.session_state.pop("_goto")
+    st.session_state._current_page = NAV_OPTIONS[nav_index]
+
+current_page = st.session_state.get("_current_page", NAV_OPTIONS[0])
+# Make sure current_page is still valid
+if current_page not in NAV_OPTIONS:
+    current_page = NAV_OPTIONS[0]
+default_index = NAV_OPTIONS.index(current_page)
 
 # Sidebar
 with st.sidebar:
@@ -56,6 +66,8 @@ with st.sidebar:
         index=default_index,
         label_visibility="collapsed",
     )
+    # Always keep _current_page in sync with the radio
+    st.session_state._current_page = page
 
     st.markdown("---")
     if st.button("🚪 Logout", use_container_width=True):
