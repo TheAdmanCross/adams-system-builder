@@ -1,84 +1,111 @@
 import streamlit as st
-import os
-from utils.auth import init_auth, render_login_page, is_authenticated, get_user
-from utils.storage import init_storage
-from utils.styles import inject_styles
+from utils.storage import get_projects
+from datetime import datetime
 
-# ─── Page Config ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Adam's System Builder",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+def render():
+    st.markdown("## ⚡ Dashboard")
 
-# ─── Init ─────────────────────────────────────────────────────────────────────
-init_auth()
-inject_styles()
+    projects = get_projects()
+    active = [p for p in projects if p.get("status") == "active"]
+    deployed = [p for p in projects if p.get("status") == "deployed"]
 
-# ─── Auth Gate ────────────────────────────────────────────────────────────────
-if not is_authenticated():
-    render_login_page()
-    st.stop()
+    # ─── Metrics Row ─────────────────────────────────────────────────────────
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{len(projects)}</div>
+            <div class="metric-label">Total Projects</div>
+            <div class="metric-delta up">↑ All time</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{len(active)}</div>
+            <div class="metric-label">In Progress</div>
+            <div class="metric-delta amber">⏳ Building</div>
+        </div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{len(deployed)}</div>
+            <div class="metric-label">Deployed Live</div>
+            <div class="metric-delta up">✅ On Hostinger</div>
+        </div>""", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{len(projects) * 5}+</div>
+            <div class="metric-label">Agents Built</div>
+            <div class="metric-delta up">↑ Autonomous</div>
+        </div>""", unsafe_allow_html=True)
 
-# ─── Authenticated App ────────────────────────────────────────────────────────
-user = get_user()
-init_storage()
+    st.markdown("<br/>", unsafe_allow_html=True)
 
-NAV_OPTIONS = [
-    "🏠  Dashboard",
-    "➕  New Customer",
-    "📋  Questionnaire",
-    "🤖  Agent Builder",
-    "🚀  Generate & Deploy",
-    "⚙️  Settings",
-]
+    # ─── Quick Prompts ────────────────────────────────────────────────────────
+    col_a, col_b = st.columns(2)
 
-# Sidebar
-with st.sidebar:
-    st.markdown(f"""
-    <div class="sidebar-user">
-        <img src="{user.get('picture','')}" class="avatar" onerror="this.style.display='none'"/>
-        <div>
-            <div class="user-name">{user.get('name','Adam')}</div>
-            <div class="user-email">{user.get('email','')}</div>
+    with col_a:
+        st.markdown("### 🧠 AI Reminder Prompt")
+        st.markdown('<span class="tag">Copy → Paste into any AI session</span>', unsafe_allow_html=True)
+        reminder_prompt = """You are Adam's (adman_cross) dedicated System Builder AI. Your single mission is to power his Python/Streamlit app that creates custom agentic AI webapps for any industry using: n8n (Hostinger + Coolify), Supabase, Antigravity + Claude Code (with n8n expert skill packs), Code Rabbit CLI for bug fixing. Mirror Cook OS (Skills + Context + Tools), webprodigies workflows, n8n agent tutorials, and Dan Martell one-stop GTM. Always output ready-to-import n8n JSON, Antigravity-ready prompts, Coolify commands, or Streamlit code updates. Prioritise speed-to-live for high-ticket clients (Catholic Archdiocese, SaaS, healthcare, etc.). Never suggest cloud-only tools. Stay agentic and autonomous."""
+        st.code(reminder_prompt, language="text")
+
+    with col_b:
+        st.markdown("### 🏗️ Customer Build Prompt")
+        st.markdown('<span class="tag blue">Use inside Agent Builder or Antigravity</span>', unsafe_allow_html=True)
+        build_prompt = """Build a complete agentic AI webapp for [Business Name] in the [Industry] sector. Requirements: [paste questionnaire answers]. Core stack: n8n self-hosted on Hostinger/Coolify, Supabase DB, Antigravity + Claude Code for autonomous execution, Code Rabbit for every PR. Include [voice / donation / CRM] flows. Output: 1) importable n8n JSON, 2) Supabase schema SQL, 3) Antigravity skill prompt, 4) Coolify deploy command. Make it fully autonomous like Cook OS."""
+        st.code(build_prompt, language="text")
+
+    st.markdown("---")
+
+    # ─── Recent Projects ──────────────────────────────────────────────────────
+    st.markdown("### 📁 Recent Projects")
+
+    if not projects:
+        st.markdown("""
+        <div class="card" style="text-align:center;padding:40px;">
+            <div style="font-size:48px;margin-bottom:12px;">🚀</div>
+            <div class="card-title">No projects yet</div>
+            <div class="card-sub">Click <strong>New Customer</strong> in the sidebar to build your first system</div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    else:
+        for p in projects[:10]:
+            status_color = {"active": "amber", "deployed": "green", "draft": "red"}.get(p.get("status","draft"), "amber")
+            industry = p.get("industry", "Custom")
+            created = p.get("created_at", "")[:10] if p.get("created_at") else "—"
+            agents = p.get("selected_agents", [])
+
+            st.markdown(f"""
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div>
+                        <div class="card-title">{p.get('name','Unnamed')}</div>
+                        <div class="card-sub">{industry} · {p.get('type','')} · {created}</div>
+                        <div style="margin-top:8px;">
+                            {''.join([f'<span class="tag">{a[:25]}</span>' for a in agents[:3]])}
+                        </div>
+                    </div>
+                    <span class="tag {status_color}">{p.get('status','draft').upper()}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.markdown("---")
-    page = st.radio(
-        "",
-        NAV_OPTIONS,
-        label_visibility="collapsed",
-        key="nav_page",
-    )
+    st.markdown("### ⚡ Quick Actions")
 
-    st.markdown("---")
-    if st.button("🚪 Logout", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+    c1, c2, c3 = st.columns(3)
+    new_customer_clicked = False
+    with c1:
+        if st.button("➕ New Customer", use_container_width=True):
+            new_customer_clicked = True
+    with c2:
+        st.link_button("📖 n8n Templates", "https://n8n.io/workflows/", use_container_width=True)
+    with c3:
+        st.link_button("🐇 Code Rabbit Docs", "https://coderabbit.ai", use_container_width=True)
+
+    # Navigate outside the column context so rerun works cleanly
+    if new_customer_clicked:
+        st.session_state["nav_page"] = "➕  New Customer"
         st.rerun()
-
-    st.markdown("""
-    <div class="sidebar-footer">
-        <span class="status-dot green"></span> System Builder v2.0<br/>
-        <small>Hostinger · Coolify · n8n · Supabase</small>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ─── Page Router ──────────────────────────────────────────────────────────────
-clean_page = page.split("  ", 1)[-1]
-
-if clean_page == "Dashboard":
-    from pages import dashboard; dashboard.render()
-elif clean_page == "New Customer":
-    from pages import intake; intake.render()
-elif clean_page == "Questionnaire":
-    from pages import questionnaire; questionnaire.render()
-elif clean_page == "Agent Builder":
-    from pages import agent_builder; agent_builder.render()
-elif clean_page == "Generate & Deploy":
-    from pages import generate; generate.render()
-elif clean_page == "Settings":
-    from pages import settings; settings.render()
