@@ -1,6 +1,6 @@
 import streamlit as st
 from utils.playbooks import list_industries, get_playbook
-from utils.storage import save_project
+from utils.storage import save_project, save_custom_industries
 import uuid
 
 # ─── Default project types ────────────────────────────────────────────────────
@@ -15,13 +15,13 @@ DEFAULT_PROJECT_TYPES = [
 ]
 
 def _get_industries():
-    """Get industries list including any custom ones added by user."""
     base = list_industries()
     custom = st.session_state.get("custom_industries", [])
-    return base + custom
+    # Remove "Other / Custom" from end, append custom ones, put Other/Custom last
+    base_without_other = [i for i in base if i != "Other / Custom"]
+    return base_without_other + custom + ["Other / Custom"]
 
 def _get_project_types():
-    """Get project types including any custom ones added by user."""
     base = DEFAULT_PROJECT_TYPES
     custom = st.session_state.get("custom_project_types", [])
     return base + custom
@@ -31,8 +31,6 @@ def render():
 
     if "current_project" not in st.session_state:
         st.session_state.current_project = {}
-    if "custom_industries" not in st.session_state:
-        st.session_state.custom_industries = []
     if "custom_project_types" not in st.session_state:
         st.session_state.custom_project_types = []
     if "show_add_industry" not in st.session_state:
@@ -73,7 +71,8 @@ def render():
                 with new_ind_col2:
                     if st.button("Add ✓", key="confirm_add_industry"):
                         if new_industry and new_industry not in industries:
-                            st.session_state.custom_industries.append(new_industry)
+                            updated = st.session_state.get("custom_industries", []) + [new_industry]
+                            save_custom_industries(updated)   # persists to Supabase
                             st.session_state.show_add_industry = False
                             st.success(f"✅ '{new_industry}' added!")
                             st.rerun()
@@ -163,14 +162,16 @@ def render():
         st.markdown(f'**Hosting:** <span class="tag green">{hosting}</span>',
                     unsafe_allow_html=True)
 
-        # Show custom industries/types added
-        if st.session_state.custom_industries or st.session_state.custom_project_types:
+        # Show custom industries added
+        custom_industries = st.session_state.get("custom_industries", [])
+        custom_types = st.session_state.get("custom_project_types", [])
+        if custom_industries or custom_types:
             st.markdown("---")
             st.markdown("**Your Custom Additions:**")
-            for ind in st.session_state.custom_industries:
+            for ind in custom_industries:
                 st.markdown(f'<span class="tag amber">📁 {ind}</span>',
                             unsafe_allow_html=True)
-            for pt in st.session_state.custom_project_types:
+            for pt in custom_types:
                 st.markdown(f'<span class="tag amber">⚙️ {pt}</span>',
                             unsafe_allow_html=True)
 
