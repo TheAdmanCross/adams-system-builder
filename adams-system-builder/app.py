@@ -1,23 +1,19 @@
 """
 Google OAuth for Streamlit Cloud.
-Session token is stored in Supabase and kept in the URL query param (?s=TOKEN)
-so page refreshes restore the session without re-login.
-No extra packages required beyond the existing stack.
+Streamlit Cloud resets session on redirect, so we skip state validation.
+Security is maintained by locking to ALLOWED_EMAILS only.
 """
 import streamlit as st
 import os
 import requests
-import json
-import secrets
 from urllib.parse import urlencode
+import secrets
 
 GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
-SESSION_PREFIX = "session:"
-
 
 def _secret(key: str, default: str = "") -> str:
     try:
@@ -25,91 +21,15 @@ def _secret(key: str, default: str = "") -> str:
     except Exception:
         return os.environ.get(key, default)
 
-
-# ─── Supabase session store ───────────────────────────────────────────────────
-
-def _get_supabase():
-    def _s(key):
-        try:
-            return st.secrets.get(key, os.environ.get(key, ""))
-        except Exception:
-            return os.environ.get(key, "")
-    url = _s("SUPABASE_URL")
-    key = _s("SUPABASE_SERVICE_KEY")
-    if not url or not key:
-        return None
-    try:
-        from supabase import create_client
-        return create_client(url, key)
-    except Exception:
-        return None
-
-
-def _save_session(token: str, user: dict):
-    """Save session token → user data in Supabase settings table."""
-    try:
-        client = _get_supabase()
-        if client:
-            client.table("settings").upsert({
-                "key": f"{SESSION_PREFIX}{token}",
-                "value": json.dumps(user),
-            }).execute()
-    except Exception:
-        pass
-
-
-def _load_session(token: str) -> dict:
-    """Load user data from Supabase by session token."""
-    try:
-        client = _get_supabase()
-        if client:
-            resp = client.table("settings").select("value").eq(
-                "key", f"{SESSION_PREFIX}{token}"
-            ).maybe_single().execute()
-            if resp and resp.data:
-                return json.loads(resp.data["value"])
-    except Exception:
-        pass
-    return None
-
-
-def _delete_session(token: str):
-    """Remove session token from Supabase on logout."""
-    try:
-        client = _get_supabase()
-        if client:
-            client.table("settings").delete().eq(
-                "key", f"{SESSION_PREFIX}{token}"
-            ).execute()
-    except Exception:
-        pass
-
-
-# ─── Auth core ────────────────────────────────────────────────────────────────
-
 def init_auth():
     if "user" not in st.session_state:
         st.session_state.user = None
-
     params = st.query_params
-
-    # Handle OAuth callback
     if "code" in params:
         _handle_callback(params["code"])
-        return
-
-    # Restore session from URL token on refresh
-    if not st.session_state.user and "s" in params:
-        token = params["s"]
-        user = _load_session(token)
-        if user:
-            st.session_state.user = user
-            st.session_state.session_token = token
-
 
 def _get_redirect_uri():
     return _secret("REDIRECT_URI", PRODUCTION_URL)
-
 
 def _build_auth_url():
     params = {
@@ -122,7 +42,6 @@ def _build_auth_url():
         "prompt":        "select_account",
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
-
 
 def _handle_callback(code: str):
     try:
@@ -156,40 +75,23 @@ def _handle_callback(code: str):
                 st.query_params.clear()
                 st.stop()
 
-        # Generate session token and persist to Supabase
-        session_token = secrets.token_urlsafe(32)
-        _save_session(session_token, user)
-
         st.session_state.user = user
-        st.session_state.session_token = session_token
-
-        # Set token in URL — survives page refresh
         st.query_params.clear()
-        st.query_params["s"] = session_token
         st.rerun()
 
     except Exception as e:
         st.error(f"Login error: {e}")
         st.query_params.clear()
 
-
 def is_authenticated() -> bool:
     return st.session_state.get("user") is not None
-
 
 def get_user() -> dict:
     return st.session_state.get("user", {})
 
-
 def logout():
-    """Clear session from Supabase, URL, and session state."""
-    token = st.session_state.get("session_token")
-    if token:
-        _delete_session(token)
-    st.query_params.clear()
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-
 
 def render_login_page():
     client_id = _secret("GOOGLE_CLIENT_ID")
