@@ -1,5 +1,19 @@
 import streamlit as st
 from utils.storage import save_settings
+import os
+
+def _test_supabase(url, key):
+    """Test Supabase connection and return (success, message)."""
+    if not url or not key:
+        return False, "Missing URL or key."
+    try:
+        from supabase import create_client
+        client = create_client(url, key)
+        # Try a simple read from settings table
+        resp = client.table("settings").select("key").limit(1).execute()
+        return True, f"✅ Connected! Settings table accessible."
+    except Exception as e:
+        return False, f"❌ Error: {e}"
 
 def render():
     st.markdown("## ⚙️ Settings")
@@ -64,12 +78,57 @@ def render():
 
     with tab3:
         st.markdown("#### Supabase Project")
-        supabase_url = st.text_input("Project URL", value=val("supabase_url"), placeholder="https://xxxx.supabase.co")
+
+        # Pull from Streamlit secrets first, then settings
+        def _s(key):
+            try:
+                return st.secrets.get(key, os.environ.get(key, ""))
+            except Exception:
+                return os.environ.get(key, "")
+
+        secret_url = _s("SUPABASE_URL")
+        secret_key = _s("SUPABASE_SERVICE_KEY")
+
+        supabase_url = st.text_input(
+            "Project URL",
+            value=val("supabase_url") or secret_url,
+            placeholder="https://xxxx.supabase.co"
+        )
         c1, c2 = st.columns(2)
         with c1:
-            supabase_anon_key = st.text_input("Anon (Public) Key", value=val("supabase_anon_key"), type="password", placeholder="eyJh...")
+            supabase_anon_key = st.text_input(
+                "Anon (Public) Key",
+                value=val("supabase_anon_key"),
+                type="password",
+                placeholder="eyJh... or sb_publishable_..."
+            )
         with c2:
-            supabase_service_key = st.text_input("Service Role Key ⚠️", value=val("supabase_service_key"), type="password", placeholder="eyJh...", help="Keep this secret — never share or commit")
+            supabase_service_key = st.text_input(
+                "Service Role Key ⚠️",
+                value=val("supabase_service_key") or secret_key,
+                type="password",
+                placeholder="eyJh... or sb_secret_...",
+                help="Keep this secret — never share or commit"
+            )
+
+        # ─── Connection test ──────────────────────────────────────────────────
+        st.markdown("#### 🔌 Test Connection")
+        test_url  = supabase_url or secret_url
+        test_key  = supabase_service_key or secret_key
+
+        if st.button("🧪 Test Supabase Connection", use_container_width=True):
+            with st.spinner("Testing connection..."):
+                success, msg = _test_supabase(test_url, test_key)
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
+                st.markdown("""
+                **Common fixes:**
+                - Make sure you're using the **Secret / Service Role** key, not the Publishable/Anon key
+                - Check the URL matches your Supabase project exactly
+                - Make sure the `settings` table exists — run the SQL schema from Generate & Deploy first
+                """)
 
         st.info("🗃️ After saving, go to **Generate & Deploy** → copy the SQL schema → run it in Supabase SQL Editor to create tables.")
 
@@ -113,26 +172,26 @@ def render():
     st.markdown("---")
     if st.button("💾 Save All Settings", type="primary", use_container_width=True):
         new_settings = {
-            "hostinger_vps_ip": hostinger_vps_ip,
-            "hostinger_domain": hostinger_domain,
-            "coolify_url": coolify_url,
-            "coolify_api_token": coolify_api_token,
-            "n8n_url": n8n_url,
-            "n8n_api_key": n8n_api_key,
-            "supabase_url": supabase_url,
-            "supabase_anon_key": supabase_anon_key,
+            "hostinger_vps_ip":     hostinger_vps_ip,
+            "hostinger_domain":     hostinger_domain,
+            "coolify_url":          coolify_url,
+            "coolify_api_token":    coolify_api_token,
+            "n8n_url":              n8n_url,
+            "n8n_api_key":          n8n_api_key,
+            "supabase_url":         supabase_url,
+            "supabase_anon_key":    supabase_anon_key,
             "supabase_service_key": supabase_service_key,
-            "anthropic_api_key": anthropic_api_key,
-            "coderabbit_api_key": coderabbit_api_key,
-            "github_token": github_token,
-            "github_org": github_org,
-            "antigravity_api_key": antigravity_api_key,
-            "elevenlabs_api_key": elevenlabs_api_key,
-            "twilio_account_sid": twilio_account_sid,
-            "twilio_auth_token": twilio_auth_token,
-            "twilio_phone_number": twilio_phone_number,
-            "slack_webhook": slack_webhook,
-            "discord_webhook": discord_webhook,
+            "anthropic_api_key":    anthropic_api_key,
+            "coderabbit_api_key":   coderabbit_api_key,
+            "github_token":         github_token,
+            "github_org":           github_org,
+            "antigravity_api_key":  antigravity_api_key,
+            "elevenlabs_api_key":   elevenlabs_api_key,
+            "twilio_account_sid":   twilio_account_sid,
+            "twilio_auth_token":    twilio_auth_token,
+            "twilio_phone_number":  twilio_phone_number,
+            "slack_webhook":        slack_webhook,
+            "discord_webhook":      discord_webhook,
         }
         save_settings(new_settings)
         st.success("✅ All settings saved securely.")
