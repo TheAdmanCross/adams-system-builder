@@ -12,45 +12,33 @@ def init_storage():
     if "settings" not in st.session_state:
         st.session_state.settings = _load_settings()
 
-# ─── Settings ───────────────────────────────────────────────────────────────
+# ─── Settings ─────────────────────────────────────────────────────────────────
 
 def _settings_key():
     return "sb_settings_v1"
 
 def _load_settings():
-    """Load from Supabase if available, else return defaults."""
     defaults = {
-        # Hosting
-        "hostinger_vps_ip": "",
-        "hostinger_domain": "",
-        # Coolify
-        "coolify_url": "",
-        "coolify_api_token": "",
-        # n8n
-        "n8n_url": "",
-        "n8n_api_key": "",
-        # Supabase
-        "supabase_url": "",
-        "supabase_anon_key": "",
-        "supabase_service_key": "",
-        # Claude / Anthropic
-        "anthropic_api_key": "",
-        # Code Rabbit
-        "coderabbit_api_key": "",
-        # GitHub
-        "github_token": "",
-        "github_org": "",
-        # Antigravity
-        "antigravity_api_key": "",
-        # ElevenLabs (voice agents)
-        "elevenlabs_api_key": "",
-        # Twilio (SMS/voice)
-        "twilio_account_sid": "",
-        "twilio_auth_token": "",
-        "twilio_phone_number": "",
-        # Notifications
-        "slack_webhook": "",
-        "discord_webhook": "",
+        "hostinger_vps_ip":      "",
+        "hostinger_domain":      "",
+        "coolify_url":           "",
+        "coolify_api_token":     "",
+        "n8n_url":               "",
+        "n8n_api_key":           "",
+        "supabase_url":          "",
+        "supabase_anon_key":     "",
+        "supabase_service_key":  "",
+        "anthropic_api_key":     "",
+        "coderabbit_api_key":    "",
+        "github_token":          "",
+        "github_org":            "",
+        "antigravity_api_key":   "",
+        "elevenlabs_api_key":    "",
+        "twilio_account_sid":    "",
+        "twilio_auth_token":     "",
+        "twilio_phone_number":   "",
+        "slack_webhook":         "",
+        "discord_webhook":       "",
     }
     try:
         client = _get_supabase()
@@ -58,7 +46,7 @@ def _load_settings():
             resp = client.table("settings").select("*").eq("key", _settings_key()).maybe_single().execute()
             if resp.data:
                 return {**defaults, **json.loads(resp.data.get("value", "{}"))}
-    except:
+    except Exception:
         pass
     return defaults
 
@@ -68,10 +56,10 @@ def save_settings(data: dict):
         client = _get_supabase()
         if client:
             client.table("settings").upsert({"key": _settings_key(), "value": json.dumps(data)}).execute()
-    except:
-        pass  # Falls back to session state
+    except Exception:
+        pass
 
-# ─── Projects ───────────────────────────────────────────────────────────────
+# ─── Projects ─────────────────────────────────────────────────────────────────
 
 def _load_projects():
     try:
@@ -79,7 +67,7 @@ def _load_projects():
         if client:
             resp = client.table("projects").select("*").order("created_at", desc=True).execute()
             return resp.data or []
-    except:
+    except Exception:
         pass
     return []
 
@@ -92,7 +80,7 @@ def save_project(project: dict):
             resp = client.table("projects").upsert(project).execute()
             st.session_state.projects = _load_projects()
             return resp.data[0] if resp.data else project
-    except:
+    except Exception:
         pass
     if "projects" not in st.session_state:
         st.session_state.projects = []
@@ -107,11 +95,14 @@ def delete_project(project_id: str):
         client = _get_supabase()
         if client:
             client.table("projects").delete().eq("id", project_id).execute()
-    except:
+    except Exception:
         pass
-    st.session_state.projects = [p for p in st.session_state.get("projects", []) if p.get("id") != project_id]
+    st.session_state.projects = [
+        p for p in st.session_state.get("projects", [])
+        if p.get("id") != project_id
+    ]
 
-# ─── Supabase Client ─────────────────────────────────────────────────────────
+# ─── Supabase Client ──────────────────────────────────────────────────────────
 
 def _get_supabase():
     def _s(key):
@@ -127,5 +118,5 @@ def _get_supabase():
     try:
         from supabase import create_client
         return create_client(url, key)
-    except:
+    except Exception:
         return None
