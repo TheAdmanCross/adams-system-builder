@@ -1,7 +1,8 @@
 import streamlit as st
 from utils.playbooks import list_industries, get_playbook
-from utils.storage import save_project, save_custom_industries
+from utils.storage import save_project, save_custom_industries, _get_supabase
 import uuid
+import json
 
 # ─── Default project types ────────────────────────────────────────────────────
 DEFAULT_PROJECT_TYPES = [
@@ -17,14 +18,11 @@ DEFAULT_PROJECT_TYPES = [
 def _get_industries():
     base = list_industries()
     custom = st.session_state.get("custom_industries", [])
-    # Remove "Other / Custom" from end, append custom ones, put Other/Custom last
     base_without_other = [i for i in base if i != "Other / Custom"]
     return base_without_other + custom + ["Other / Custom"]
 
 def _get_project_types():
-    base = DEFAULT_PROJECT_TYPES
-    custom = st.session_state.get("custom_project_types", [])
-    return base + custom
+    return DEFAULT_PROJECT_TYPES + st.session_state.get("custom_project_types", [])
 
 def render():
     st.markdown("## ➕ New Customer")
@@ -45,7 +43,6 @@ def render():
         name = st.text_input("Business / Organisation Name *",
                              placeholder="e.g. Catholic Archdiocese of Brisbane")
 
-        # ─── Industry selector + Add New ─────────────────────────────────────
         industries = _get_industries()
         industry_col, add_ind_col = st.columns([4, 1])
         with industry_col:
@@ -72,12 +69,11 @@ def render():
                     if st.button("Add ✓", key="confirm_add_industry"):
                         if new_industry and new_industry not in industries:
                             updated = st.session_state.get("custom_industries", []) + [new_industry]
-                            save_custom_industries(updated)   # persists to Supabase
+                            save_custom_industries(updated)
                             st.session_state.show_add_industry = False
                             st.success(f"✅ '{new_industry}' added!")
                             st.rerun()
 
-        # ─── Project Type selector + Add New ─────────────────────────────────
         project_types = _get_project_types()
         type_col, add_type_col = st.columns([4, 1])
         with type_col:
@@ -108,25 +104,14 @@ def render():
                             st.success(f"✅ '{new_type}' added!")
                             st.rerun()
 
-        # ─── Rest of the form ─────────────────────────────────────────────────
-        contact_name = st.text_input("Primary Contact Name",
-                                      placeholder="e.g. John Smith")
-        contact_email = st.text_input("Contact Email",
-                                       placeholder="john@example.com")
+        contact_name = st.text_input("Primary Contact Name", placeholder="e.g. John Smith")
+        contact_email = st.text_input("Contact Email", placeholder="john@example.com")
         budget = st.selectbox("Budget Range (AUD)", [
-            "Prefer not to say",
-            "< $5,000",
-            "$5,000 – $15,000",
-            "$15,000 – $50,000",
-            "$50,000 – $100,000",
-            "$100,000+",
+            "Prefer not to say", "< $5,000", "$5,000 – $15,000",
+            "$15,000 – $50,000", "$50,000 – $100,000", "$100,000+",
         ])
         timeline = st.selectbox("Timeline", [
-            "ASAP (< 2 weeks)",
-            "1 month",
-            "3 months",
-            "6 months",
-            "Flexible",
+            "ASAP (< 2 weeks)", "1 month", "3 months", "6 months", "Flexible",
         ])
         notes = st.text_area("Additional Notes / Brief",
                               placeholder="Paste any brief, job description, or requirements here...",
@@ -139,7 +124,7 @@ def render():
         <div class="card">
             <div style="font-size:2rem;">{pb.get('icon','🔧')}</div>
             <div class="card-title" style="margin-top:8px;">{industry}</div>
-            <div class="card-sub">{pb.get('description','Custom industry — questionnaire will be free-form.')}</div>
+            <div class="card-sub">{pb.get('description','Custom industry.')}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -147,37 +132,30 @@ def render():
         if agents:
             st.markdown("**Common Agents:**")
             for agent in agents[:6]:
-                st.markdown(f'<span class="tag">{agent[:40]}</span>',
-                            unsafe_allow_html=True)
+                st.markdown(f'<span class="tag">{agent[:40]}</span>', unsafe_allow_html=True)
             st.markdown("<br/>", unsafe_allow_html=True)
 
         tech_stack = pb.get("tech_stack", ["n8n", "Supabase", "Coolify"])
         st.markdown("**Default Stack:**")
         for tech in tech_stack:
-            st.markdown(f'<span class="tag blue">{tech}</span>',
-                        unsafe_allow_html=True)
+            st.markdown(f'<span class="tag blue">{tech}</span>', unsafe_allow_html=True)
 
         st.markdown("<br/>", unsafe_allow_html=True)
         hosting = pb.get("default_hosting", "Hostinger VPS")
-        st.markdown(f'**Hosting:** <span class="tag green">{hosting}</span>',
-                    unsafe_allow_html=True)
+        st.markdown(f'**Hosting:** <span class="tag green">{hosting}</span>', unsafe_allow_html=True)
 
-        # Show custom industries added
         custom_industries = st.session_state.get("custom_industries", [])
         custom_types = st.session_state.get("custom_project_types", [])
         if custom_industries or custom_types:
             st.markdown("---")
             st.markdown("**Your Custom Additions:**")
             for ind in custom_industries:
-                st.markdown(f'<span class="tag amber">📁 {ind}</span>',
-                            unsafe_allow_html=True)
+                st.markdown(f'<span class="tag amber">📁 {ind}</span>', unsafe_allow_html=True)
             for pt in custom_types:
-                st.markdown(f'<span class="tag amber">⚙️ {pt}</span>',
-                            unsafe_allow_html=True)
+                st.markdown(f'<span class="tag amber">⚙️ {pt}</span>', unsafe_allow_html=True)
 
     st.markdown("---")
-    if st.button("💾 Save & Continue to Questionnaire",
-                 type="primary", use_container_width=True):
+    if st.button("💾 Save & Continue to Questionnaire", type="primary", use_container_width=True):
         if not name:
             st.error("Business name is required.")
         else:
@@ -195,7 +173,22 @@ def render():
                 "status": "draft",
                 "selected_agents": pb.get("common_agents", [])[:3],
             }
+
+            # ─── Debug: test direct Supabase write ────────────────────────────
+            owner = st.session_state.get("user", {}).get("email", "adam")
+            try:
+                client = _get_supabase()
+                if client:
+                    row = {"id": project["id"], "owner": owner, "data": project}
+                    resp = client.table("projects").upsert(row).execute()
+                    st.success(f"✅ Saved to Supabase! Project ID: {project['id'][:8]}...")
+                    st.session_state.projects = []  # Force reload on next visit
+                else:
+                    st.warning("⚠️ Supabase client not available — saved to session only.")
+            except Exception as e:
+                st.error(f"❌ Supabase error: {e}")
+
             save_project(project)
             st.session_state.current_project = project
-            st.success(f"✅ Project saved for **{name}**. Go to **Questionnaire** in the sidebar.")
+            st.info("➡️ Go to **Questionnaire** in the sidebar.")
             st.balloons()
