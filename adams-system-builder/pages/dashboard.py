@@ -21,6 +21,19 @@ INDUSTRY_COLORS = {
 def _color(industry):
     return INDUSTRY_COLORS.get(industry, "#666")
 
+def _safe(value, default="—", max_len=60):
+    """Sanitize a value for safe HTML rendering."""
+    if not value:
+        return default
+    s = str(value)
+    # Remove any HTML tags
+    import re
+    s = re.sub(r'<[^>]+>', '', s)
+    # Truncate
+    if len(s) > max_len:
+        s = s[:max_len] + "…"
+    return s or default
+
 def render():
     st.markdown("## ⚡ Dashboard")
 
@@ -31,16 +44,15 @@ def render():
 
     # ─── Revenue calc ─────────────────────────────────────────────────────────
     total_revenue = sum(float(p.get("revenue", 0) or 0) for p in projects)
-    deployed_revenue = sum(float(p.get("revenue", 0) or 0) for p in deployed)
 
     # ─── Metric cards ─────────────────────────────────────────────────────────
     c1, c2, c3, c4, c5 = st.columns(5)
     metrics = [
-        (c1, len(projects),   "Total Projects",    "up",    "↑ All time"),
-        (c2, len(draft),      "Draft",             "red",   "✏️ Not started"),
-        (c3, len(active),     "In Progress",       "amber", "⏳ Building"),
-        (c4, len(deployed),   "Deployed",          "up",    "✅ Live"),
-        (c5, f"${total_revenue:,.0f}", "Total Revenue (AUD)", "up", "💰 All projects"),
+        (c1, len(projects),          "Total Projects",      "up",    "↑ All time"),
+        (c2, len(draft),             "Draft",               "red",   "✏️ Not started"),
+        (c3, len(active),            "In Progress",         "amber", "⏳ Building"),
+        (c4, len(deployed),          "Deployed",            "up",    "✅ Live"),
+        (c5, f"${total_revenue:,.0f}", "Total Revenue (AUD)", "up",  "💰 All projects"),
     ]
     for col, val, label, delta_cls, delta_txt in metrics:
         with col:
@@ -56,12 +68,12 @@ def render():
     # ─── Charts row ───────────────────────────────────────────────────────────
     if projects:
         chart_col1, chart_col2 = st.columns(2)
+        total = len(projects) or 1
 
         with chart_col1:
             st.markdown("### 📊 Projects by Status")
             status_data = {"Draft": len(draft), "Active": len(active), "Deployed": len(deployed)}
             status_colors = {"Draft": "#ff4d4d", "Active": "#ffaa00", "Deployed": "#00ff88"}
-            total = len(projects) or 1
             bars_html = ""
             for status, count in status_data.items():
                 pct = (count / total) * 100
@@ -73,7 +85,7 @@ def render():
                         <span style="color:#fff;font-size:0.85rem;font-weight:600;">{count}</span>
                     </div>
                     <div style="background:#1e1e30;border-radius:4px;height:8px;">
-                        <div style="background:{color};width:{pct}%;height:8px;border-radius:4px;transition:width 0.3s;"></div>
+                        <div style="background:{color};width:{pct:.1f}%;height:8px;border-radius:4px;"></div>
                     </div>
                 </div>"""
             st.markdown(f'<div class="card" style="padding:20px;">{bars_html}</div>', unsafe_allow_html=True)
@@ -97,7 +109,7 @@ def render():
                         <span style="color:#fff;font-size:0.85rem;font-weight:600;">{count}</span>
                     </div>
                     <div style="background:#1e1e30;border-radius:4px;height:8px;">
-                        <div style="background:{color};width:{pct}%;height:8px;border-radius:4px;"></div>
+                        <div style="background:{color};width:{pct:.1f}%;height:8px;border-radius:4px;"></div>
                     </div>
                 </div>"""
             st.markdown(f'<div class="card" style="padding:20px;">{bars_html}</div>', unsafe_allow_html=True)
@@ -122,7 +134,6 @@ def render():
     # ─── Project pipeline ─────────────────────────────────────────────────────
     st.markdown("### 📁 Client Pipeline")
 
-    # Filter controls
     f1, f2, f3 = st.columns([2, 2, 1])
     with f1:
         filter_status = st.selectbox("Filter by status", ["All", "Draft", "Active", "Deployed"], label_visibility="collapsed")
@@ -131,7 +142,6 @@ def render():
     with f3:
         show_revenue = st.toggle("💰 Edit Revenue", value=False)
 
-    # Apply filters
     filtered = projects
     if filter_status != "All":
         filtered = [p for p in filtered if p.get("status", "draft").lower() == filter_status.lower()]
@@ -148,39 +158,57 @@ def render():
         """, unsafe_allow_html=True)
     else:
         for p in filtered[:20]:
-            status = p.get("status", "draft")
+            status      = p.get("status", "draft")
             status_color = {"active": "amber", "deployed": "green", "draft": "red"}.get(status, "amber")
-            industry = p.get("industry", "Custom")
-            created = p.get("created_at", "")[:10] if p.get("created_at") else "—"
-            agents = p.get("selected_agents", [])
-            revenue = p.get("revenue", "")
-            budget = p.get("budget", "")
+            industry    = _safe(p.get("industry", "Custom"), max_len=30)
+            proj_type   = _safe(p.get("type", ""), max_len=35)
+            proj_name   = _safe(p.get("name", "Unnamed"), max_len=50)
+            contact     = _safe(p.get("contact_name", ""), default="")
+            created     = p.get("created_at", "")[:10] if p.get("created_at") else "—"
+            agents      = p.get("selected_agents", [])
+            revenue     = p.get("revenue", "")
+            budget      = _safe(p.get("budget", ""), default="Not specified")
+
+            # Safe agent tags
+            agent_tags = "".join([
+                f'<span class="tag">{_safe(a, max_len=28)}</span>'
+                for a in agents[:3] if a
+            ])
+
+            # Revenue display
+            if revenue:
+                try:
+                    rev_display = f'<div style="margin-top:6px;color:#00ff88;font-size:0.85rem;font-weight:600;">💰 ${float(revenue):,.0f} AUD</div>'
+                except (ValueError, TypeError):
+                    rev_display = ""
+            else:
+                rev_display = f'<div style="margin-top:6px;color:#555;font-size:0.82rem;">Budget: {budget}</div>'
+
+            contact_html = f'<span style="color:#aaa;font-size:0.75rem;">{contact}</span>' if contact else ""
 
             st.markdown(f"""
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
-                    <div style="flex:1;">
-                        <div class="card-title">{p.get('name','Unnamed')}</div>
-                        <div class="card-sub">{industry} · {p.get('type','')} · Added {created}</div>
-                        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">
-                            {''.join([f'<span class="tag">{a[:28]}</span>' for a in agents[:3]])}
-                        </div>
-                        {f'<div style="margin-top:6px;color:#00ff88;font-size:0.85rem;font-weight:600;">💰 ${float(revenue):,.0f} AUD</div>' if revenue else f'<div style="margin-top:6px;color:#555;font-size:0.82rem;">Budget: {budget}</div>'}
+                    <div style="flex:1;min-width:0;">
+                        <div class="card-title">{proj_name}</div>
+                        <div class="card-sub">{industry} · {proj_type} · Added {created}</div>
+                        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;">{agent_tags}</div>
+                        {rev_display}
                     </div>
-                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;">
                         <span class="tag {status_color}">{status.upper()}</span>
-                        {f'<span style="color:#aaa;font-size:0.75rem;">{p.get("contact_name","")}</span>' if p.get("contact_name") else ''}
+                        {contact_html}
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # Revenue edit inline
+            # Revenue edit
             if show_revenue:
                 rev_col1, rev_col2 = st.columns([3, 1])
                 with rev_col1:
                     new_rev = st.text_input(
-                        f"Revenue for {p.get('name','')}",
+                        f"Revenue for {proj_name}",
                         value=str(revenue) if revenue else "",
                         placeholder="e.g. 5000",
                         key=f"rev_{p.get('id','')}",
