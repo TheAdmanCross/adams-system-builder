@@ -98,8 +98,6 @@ def save_custom_industries(industries: list):
         pass
 
 # ─── Projects ─────────────────────────────────────────────────────────────────
-# Schema: id (uuid), owner (text), created_at (timestamptz), data (jsonb)
-# All project fields stored inside the data jsonb column.
 
 def _load_projects() -> list:
     try:
@@ -126,15 +124,13 @@ def save_project(project: dict) -> dict:
     owner = st.session_state.get("user", {}).get("email", "adam")
     project_id = project.get("id")
     if not project_id:
-        import uuid
-        project_id = str(uuid.uuid4())
+        project_id = str(__import__('uuid').uuid4())
         project["id"] = project_id
 
     if not project.get("created_at"):
         project["created_at"] = datetime.utcnow().isoformat()
     project["updated_at"] = datetime.utcnow().isoformat()
 
-    # Store everything in data column
     row = {
         "id": project_id,
         "owner": owner,
@@ -181,16 +177,38 @@ def delete_project(project_id: str):
 # ─── Supabase Client ──────────────────────────────────────────────────────────
 
 def _get_supabase():
+    """
+    Try all possible sources for Supabase credentials in priority order:
+    1. Streamlit secrets
+    2. Environment variables
+    3. Session state settings (saved via Settings page)
+    """
     def _s(key):
         try:
-            return st.secrets.get(key, os.environ.get(key, ""))
+            v = st.secrets.get(key, "")
+            if v:
+                return v
         except Exception:
-            return os.environ.get(key, "")
+            pass
+        return os.environ.get(key, "")
 
-    url = _s("SUPABASE_URL") or st.session_state.get("settings", {}).get("supabase_url")
-    key = _s("SUPABASE_SERVICE_KEY") or st.session_state.get("settings", {}).get("supabase_service_key")
+    # Get URL — try secrets first, then session settings
+    url = (
+        _s("SUPABASE_URL")
+        or st.session_state.get("settings", {}).get("supabase_url", "")
+    )
+
+    # Get key — try all possible sources in order
+    key = (
+        _s("SUPABASE_SERVICE_KEY")
+        or st.session_state.get("settings", {}).get("supabase_service_key", "")
+        or _s("SUPABASE_ANON_KEY")
+        or st.session_state.get("settings", {}).get("supabase_anon_key", "")
+    )
+
     if not url or not key:
         return None
+
     try:
         from supabase import create_client
         return create_client(url, key)
