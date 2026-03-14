@@ -19,7 +19,6 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
 COOKIE_NAME    = "asb_session_v1"
-COOKIE_DAYS    = 7
 
 
 def _secret(key: str, default: str = "") -> str:
@@ -32,9 +31,9 @@ def _secret(key: str, default: str = "") -> str:
 # ─── Cookie helpers ───────────────────────────────────────────────────────────
 
 @st.cache_resource
-def _cookie_manager():
-    import extra_streamlit_components as stx
-    return stx.CookieManager()
+def _cookie_controller():
+    from streamlit_cookies_controller import CookieController
+    return CookieController()
 
 
 def _fernet():
@@ -47,15 +46,14 @@ def _fernet():
 def _save_cookie(user: dict):
     try:
         token = _fernet().encrypt(json.dumps(user).encode()).decode()
-        expiry = datetime.now() + timedelta(days=COOKIE_DAYS)
-        _cookie_manager().set(COOKIE_NAME, token, expires_at=expiry)
+        _cookie_controller().set(COOKIE_NAME, token)
     except Exception:
         pass
 
 
 def _load_cookie() -> dict:
     try:
-        token = _cookie_manager().get(COOKIE_NAME)
+        token = _cookie_controller().get(COOKIE_NAME)
         if token:
             return json.loads(_fernet().decrypt(token.encode()).decode())
     except Exception:
@@ -65,7 +63,7 @@ def _load_cookie() -> dict:
 
 def _clear_cookie():
     try:
-        _cookie_manager().delete(COOKIE_NAME)
+        _cookie_controller().remove(COOKIE_NAME)
     except Exception:
         pass
 
@@ -139,7 +137,7 @@ def _handle_callback(code: str):
                 st.stop()
 
         st.session_state.user = user
-        _save_cookie(user)          # ← persist session to browser cookie
+        _save_cookie(user)
         st.query_params.clear()
         st.rerun()
 
@@ -157,7 +155,6 @@ def get_user() -> dict:
 
 
 def logout():
-    """Call this instead of manually clearing session state."""
     _clear_cookie()
     for key in list(st.session_state.keys()):
         del st.session_state[key]
