@@ -4,7 +4,7 @@ from utils.auth import init_auth, render_login_page, is_authenticated, get_user
 from utils.storage import init_storage
 from utils.styles import inject_styles
 
-# ─── Page Config ─────────────────────────────────────────────────────────────
+# ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Adam's System Builder",
     page_icon="⚡",
