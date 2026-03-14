@@ -1,122 +1,460 @@
 """
-Supabase storage layer.
-Falls back to session_state if Supabase is not configured (safe for first run).
+Industry playbooks — the brain of Adam's System Builder.
+Each playbook = Skills + Context + Tools (Cook OS model).
 """
-import streamlit as st
-import os, json
-from datetime import datetime
 
-def init_storage():
-    if "projects" not in st.session_state:
-        st.session_state.projects = _load_projects()
-    if "settings" not in st.session_state:
-        st.session_state.settings = _load_settings()
+PLAYBOOKS = {
+    "Faith-Based / Non-Profit": {
+        "icon": "🙏",
+        "tag": "nonprofit",
+        "description": "Churches, charities, community organisations & non-profits — mission-driven automation.",
+        "common_agents": [
+            "Donation Flow Automation + Receipt Generator",
+            "Volunteer Coordination + Roster Management",
+            "Event & Service Booking Automation",
+            "Community Comms (Email / SMS / WhatsApp broadcast)",
+            "Grant Application Tracking + Compliance Reporting",
+            "New Member / Visitor Welcome Sequence",
+            "Fundraising Campaign Automation",
+            "Newsletter + Social Media Scheduler",
+            "After-Hours Inquiry Voice Agent",
+            "Staff & Volunteer Onboarding Workflow",
+        ],
+        "questions": [
+            {"label": "Organisation type (Church, Charity, Community Group, NFP)", "type": "text"},
+            {"label": "Number of members / congregation / service users", "type": "text"},
+            {"label": "Donation or fundraising automation needed?", "type": "checkbox"},
+            {"label": "Volunteer management & rostering?", "type": "checkbox"},
+            {"label": "Event / service booking automation?", "type": "checkbox"},
+            {"label": "Community broadcast (email/SMS/WhatsApp)?", "type": "checkbox"},
+            {"label": "Grant tracking & compliance reporting?", "type": "checkbox"},
+            {"label": "After-hours voice agent for inquiries?", "type": "checkbox"},
+            {"label": "Current software / CRM in use", "type": "text"},
+            {"label": "Integration with Microsoft 365 or Google Workspace?", "type": "checkbox"},
+            {"label": "Any compliance or data privacy requirements?", "type": "checkbox"},
+            {"label": "Specific pain points or goals", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "Coolify", "ElevenLabs"],
+        "n8n_templates": [
+            "Donation received → Receipt email → CRM update → Thank you SMS",
+            "New member form → Welcome sequence → Add to comms list",
+            "Event created → Promo broadcast → Registration → Reminder → Follow-up",
+        ],
+        "default_hosting": "Hostinger VPS (customer-owned)",
+    },
 
-# ─── Settings ─────────────────────────────────────────────────────────────────
+    "SaaS": {
+        "icon": "🚀",
+        "tag": "saas",
+        "description": "B2B or B2C SaaS product — growth, automation, and retention agents.",
+        "common_agents": [
+            "Lead Scoring + CRM Auto-Enrichment",
+            "Onboarding Email Sequence (AI-personalised)",
+            "Churn Prediction + Proactive Outreach Agent",
+            "Support Ticket → AI Draft → Human Review",
+            "Product Analytics → Weekly CEO Digest",
+            "Trial-to-Paid Conversion Nudge Agent",
+            "Bug Report → Code Rabbit Fix → PR → Deploy",
+            "Invoice & Dunning Automation (Stripe)",
+            "Competitor Monitoring Agent",
+            "Affiliate / Partner Tracking Automation",
+        ],
+        "questions": [
+            {"label": "B2B or B2C?", "type": "select", "options": ["B2B", "B2C", "Both"]},
+            {"label": "Current CRM (HubSpot, Salesforce, Pipedrive, etc.)", "type": "text"},
+            {"label": "Payment gateway (Stripe, Paddle, etc.)", "type": "text"},
+            {"label": "Monthly active users (approx)", "type": "text"},
+            {"label": "Support volume (tickets/month)", "type": "text"},
+            {"label": "Churn reduction is a priority?", "type": "checkbox"},
+            {"label": "Auto-fix code bugs via Code Rabbit + Claude?", "type": "checkbox"},
+            {"label": "Voice agent for sales calls?", "type": "checkbox"},
+            {"label": "Outbound email automation needed?", "type": "checkbox"},
+        ],
+        "tech_stack": ["n8n", "Stripe", "HubSpot", "Supabase", "Code Rabbit", "Claude Code"],
+        "n8n_templates": [
+            "New Lead → Score → CRM → Personalised Email Sequence",
+            "Trial Signup → Onboarding Drip → Convert Nudge",
+            "Bug Report → Code Rabbit CLI → Fix → GitHub PR",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def _settings_key():
-    return "sb_settings_v1"
+    "Healthcare": {
+        "icon": "🏥",
+        "tag": "healthcare",
+        "description": "Clinics, hospitals, allied health — compliance-first automation.",
+        "common_agents": [
+            "Patient Appointment Reminder (SMS/Voice)",
+            "Referral Intake & Triage Automation",
+            "After-Hours Voice Agent (FAQ + booking)",
+            "Clinical Notes → Structured Summary AI",
+            "Billing & Medicare Claim Automation",
+            "Staff Roster + On-Call SMS Alerts",
+            "Medication Refill Request Handler",
+            "Patient Feedback Collection + Analysis",
+            "GP Letter Auto-Generation",
+            "Compliance Audit Trail Automation",
+        ],
+        "questions": [
+            {"label": "HIPAA / Australian Privacy Act compliance required?", "type": "checkbox"},
+            {"label": "Practice type (GP, Specialist, Allied Health, Hospital)", "type": "text"},
+            {"label": "Current PMS (Best Practice, MedicalDirector, etc.)", "type": "text"},
+            {"label": "Telehealth integration needed?", "type": "checkbox"},
+            {"label": "Voice agent for after-hours calls?", "type": "checkbox"},
+            {"label": "Appointment reminders via SMS?", "type": "checkbox"},
+            {"label": "Medicare / billing automation?", "type": "checkbox"},
+            {"label": "Number of practitioners", "type": "text"},
+            {"label": "Patient volume per day (approx)", "type": "text"},
+        ],
+        "tech_stack": ["n8n", "Twilio", "ElevenLabs", "Supabase (encrypted)", "HL7 FHIR"],
+        "n8n_templates": [
+            "Booking Confirmed → 24h SMS Reminder → Confirmation → No-show follow-up",
+            "After-hours call → Voice AI → FAQ or Book → Handoff",
+            "Clinical note → GPT Summary → PMS update",
+        ],
+        "default_hosting": "Hostinger VPS (Australian data centre)",
+    },
 
-def _load_settings():
-    defaults = {
-        "hostinger_vps_ip":      "",
-        "hostinger_domain":      "",
-        "coolify_url":           "",
-        "coolify_api_token":     "",
-        "n8n_url":               "",
-        "n8n_api_key":           "",
-        "supabase_url":          "",
-        "supabase_anon_key":     "",
-        "supabase_service_key":  "",
-        "anthropic_api_key":     "",
-        "coderabbit_api_key":    "",
-        "github_token":          "",
-        "github_org":            "",
-        "antigravity_api_key":   "",
-        "elevenlabs_api_key":    "",
-        "twilio_account_sid":    "",
-        "twilio_auth_token":     "",
-        "twilio_phone_number":   "",
-        "slack_webhook":         "",
-        "discord_webhook":       "",
-    }
-    try:
-        client = _get_supabase()
-        if client:
-            resp = client.table("settings").select("*").eq("key", _settings_key()).maybe_single().execute()
-            if resp.data:
-                return {**defaults, **json.loads(resp.data.get("value", "{}"))}
-    except Exception:
-        pass
-    return defaults
+    "E-commerce": {
+        "icon": "🛒",
+        "tag": "ecommerce",
+        "description": "Shopify / WooCommerce / custom — sell more, automate everything.",
+        "common_agents": [
+            "Abandoned Cart Recovery (Email + SMS + Voice)",
+            "Post-Purchase Upsell Flow",
+            "Inventory Low-Stock Alert + Reorder PO",
+            "Customer Review Harvesting + Response",
+            "Returns & Refunds Automation",
+            "Influencer / Affiliate Outreach Agent",
+            "Dynamic Pricing Monitor (competitor scrape)",
+            "Loyalty Points + VIP Tier Automation",
+            "New Product Launch Campaign Sequence",
+            "Fraud Detection Alert + Manual Review Trigger",
+        ],
+        "questions": [
+            {"label": "Platform (Shopify, WooCommerce, Custom)", "type": "select", "options": ["Shopify", "WooCommerce", "Custom", "Other"]},
+            {"label": "Monthly orders (approx)", "type": "text"},
+            {"label": "Abandoned cart recovery needed?", "type": "checkbox"},
+            {"label": "Voice agent for order status / support?", "type": "checkbox"},
+            {"label": "Inventory management automation?", "type": "checkbox"},
+            {"label": "Loyalty program automation?", "type": "checkbox"},
+            {"label": "Influencer / affiliate tracking?", "type": "checkbox"},
+            {"label": "Current ESP (Klaviyo, Mailchimp, etc.)", "type": "text"},
+        ],
+        "tech_stack": ["n8n", "Shopify API", "Klaviyo", "Twilio", "Supabase"],
+        "n8n_templates": [
+            "Abandoned cart (1h) → Email 1 → (24h) → SMS → (72h) → Discount offer",
+            "Order shipped → Tracking update → Review request (7d) → Upsell",
+            "Inventory < threshold → Reorder PO → Supplier email → Update sheet",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def save_settings(data: dict):
-    st.session_state.settings = data
-    try:
-        client = _get_supabase()
-        if client:
-            client.table("settings").upsert({"key": _settings_key(), "value": json.dumps(data)}).execute()
-    except Exception:
-        pass
+    "Education": {
+        "icon": "🎓",
+        "tag": "education",
+        "description": "Schools, RTOs, online courses — enrolment to graduation automation.",
+        "common_agents": [
+            "Student Enrolment + Onboarding Automation",
+            "Course Completion Nudge Agent",
+            "Parent Communication Broadcast",
+            "Assessment Submission Tracker + Reminders",
+            "Teacher Substitution Roster Agent",
+            "Compliance Reporting (ASQA / ACARA)",
+            "Alumni Engagement + Fundraising Agent",
+            "AI Tutoring FAQ Agent (RAG on curriculum)",
+            "Fee Payment Reminder + Overdue Escalation",
+            "Event + Excursion Management Automation",
+        ],
+        "questions": [
+            {"label": "Institution type (School, RTO, University, Online Course)", "type": "text"},
+            {"label": "Number of students", "type": "text"},
+            {"label": "Current LMS (Canvas, Moodle, etc.)", "type": "text"},
+            {"label": "Compliance reporting required (ASQA, ACARA)?", "type": "checkbox"},
+            {"label": "Parent SMS/email notifications needed?", "type": "checkbox"},
+            {"label": "AI tutoring / FAQ chatbot needed?", "type": "checkbox"},
+            {"label": "Fee payment automation?", "type": "checkbox"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "OpenAI/Claude", "Moodle API"],
+        "n8n_templates": [
+            "Enrolment form → Create account → Welcome sequence → Onboarding checklist",
+            "Assignment due in 48h → Student reminder → Missed → Escalate to teacher",
+            "Parent query → AI FAQ → Resolved or → Human handoff",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-# ─── Projects ─────────────────────────────────────────────────────────────────
+    "Real Estate": {
+        "icon": "🏡",
+        "tag": "realestate",
+        "description": "Agencies, property managers, developers — list faster, convert more.",
+        "common_agents": [
+            "Lead Capture + Instant Follow-up Voice/SMS",
+            "Property Listing Auto-Generator (photos → copy)",
+            "Open Home Registration + Follow-up Sequence",
+            "Rental Maintenance Request Handler",
+            "Lease Renewal Reminder + Auto-Send",
+            "Market Report Generation (weekly digest)",
+            "Vendor Report Auto-Compilation",
+            "Buyer Matching Agent (new listings → matched leads)",
+        ],
+        "questions": [
+            {"label": "Agency type (Sales, PM, Development, All)", "type": "text"},
+            {"label": "Current CRM (Rex, VaultRE, Salesforce, etc.)", "type": "text"},
+            {"label": "Number of properties under management", "type": "text"},
+            {"label": "Instant lead response via voice/SMS?", "type": "checkbox"},
+            {"label": "Rental maintenance automation?", "type": "checkbox"},
+            {"label": "AI property description generator?", "type": "checkbox"},
+        ],
+        "tech_stack": ["n8n", "Twilio", "ElevenLabs", "Supabase", "REI API"],
+        "n8n_templates": [
+            "Lead form → Instant SMS/call → CRM create → Agent notify",
+            "New listing → Match buyers → Personalised email + SMS",
+            "Maintenance request → Tradesperson book → Tenant update",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def _load_projects():
-    try:
-        client = _get_supabase()
-        if client:
-            resp = client.table("projects").select("*").order("created_at", desc=True).execute()
-            return resp.data or []
-    except Exception:
-        pass
-    return []
+    # ─── NEW PLAYBOOKS ────────────────────────────────────────────────────────
 
-def save_project(project: dict):
-    project["created_at"] = datetime.utcnow().isoformat()
-    project["owner"] = st.session_state.get("user", {}).get("email", "adam")
-    try:
-        client = _get_supabase()
-        if client:
-            resp = client.table("projects").upsert(project).execute()
-            st.session_state.projects = _load_projects()
-            return resp.data[0] if resp.data else project
-    except Exception:
-        pass
-    if "projects" not in st.session_state:
-        st.session_state.projects = []
-    st.session_state.projects.insert(0, project)
-    return project
+    "Mining & Resources": {
+        "icon": "⛏️",
+        "tag": "mining",
+        "description": "Mining operations, resources & energy — safety, compliance, and field automation.",
+        "common_agents": [
+            "Safety Incident Report → Triage → Notify Chain of Command",
+            "Equipment Maintenance Schedule + Alert System",
+            "Shift Roster + On-Call SMS Automation",
+            "Compliance & Audit Report Generator",
+            "Site Induction + Training Tracker",
+            "Procurement Request → Approval → PO Automation",
+            "Environmental Monitoring Alert Agent",
+            "Contractor Onboarding + Licence Verification",
+            "Daily Production Report Auto-Generation",
+            "Emergency Escalation Voice Agent",
+        ],
+        "questions": [
+            {"label": "Operation type (Underground, Open Cut, Oil & Gas, Energy)", "type": "text"},
+            {"label": "Number of sites / locations", "type": "text"},
+            {"label": "Workforce size (approx)", "type": "text"},
+            {"label": "Safety incident reporting automation needed?", "type": "checkbox"},
+            {"label": "Equipment / asset maintenance tracking?", "type": "checkbox"},
+            {"label": "Shift roster + SMS alerts needed?", "type": "checkbox"},
+            {"label": "Compliance & audit reporting?", "type": "checkbox"},
+            {"label": "Contractor management automation?", "type": "checkbox"},
+            {"label": "Current CMMS or ERP system in use", "type": "text"},
+            {"label": "Environmental monitoring & alerts?", "type": "checkbox"},
+            {"label": "Specific regulatory requirements (SafeWork, EPA, etc.)", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "Coolify", "Power BI API"],
+        "n8n_templates": [
+            "Safety incident reported → Classify severity → Notify supervisor → Log + report",
+            "Equipment due for service → Work order created → Assign tech → SMS alert",
+            "Shift change → Roster confirmed → Broadcast to crew → Acknowledge",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def get_projects():
-    return st.session_state.get("projects", [])
+    "Legal & Professional Services": {
+        "icon": "⚖️",
+        "tag": "legal",
+        "description": "Law firms, accountants, consultants — client intake, billing, and document automation.",
+        "common_agents": [
+            "Client Intake Form → Conflict Check → Matter Open",
+            "Document Assembly + e-Signature Automation",
+            "Time Tracking → Invoice Generation → Follow-up",
+            "Court Date / Deadline Reminder System",
+            "New Enquiry → Qualification → Book Consultation",
+            "Trust Account Reconciliation Alerts",
+            "Compliance Calendar + Reminder Agent",
+            "Client Update Broadcast (matter progress)",
+            "After-Hours Inquiry Voice Agent",
+            "Referral Partner Tracking + Reporting",
+        ],
+        "questions": [
+            {"label": "Firm type (Law, Accounting, Consulting, Financial Planning)", "type": "text"},
+            {"label": "Number of practitioners / staff", "type": "text"},
+            {"label": "Current practice management system", "type": "text"},
+            {"label": "Client intake automation needed?", "type": "checkbox"},
+            {"label": "Document assembly + e-signature?", "type": "checkbox"},
+            {"label": "Automated invoicing + debt follow-up?", "type": "checkbox"},
+            {"label": "Court / deadline reminder system?", "type": "checkbox"},
+            {"label": "After-hours inquiry voice agent?", "type": "checkbox"},
+            {"label": "Trust account / compliance alerts?", "type": "checkbox"},
+            {"label": "Specific compliance requirements (Law Society, ASIC, etc.)", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "DocuSign API", "Xero API"],
+        "n8n_templates": [
+            "New enquiry → Qualify → Conflict check → Book consult → Send confirmation",
+            "Matter milestone reached → Draft update → Client email → Log sent",
+            "Invoice overdue 14d → Reminder email → 30d → SMS → 60d → Escalate",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def delete_project(project_id: str):
-    try:
-        client = _get_supabase()
-        if client:
-            client.table("projects").delete().eq("id", project_id).execute()
-    except Exception:
-        pass
-    st.session_state.projects = [
-        p for p in st.session_state.get("projects", [])
-        if p.get("id") != project_id
-    ]
+    "Hospitality & Tourism": {
+        "icon": "🏨",
+        "tag": "hospitality",
+        "description": "Hotels, restaurants, tourism operators — bookings, guest experience, and ops automation.",
+        "common_agents": [
+            "Booking Confirmation + Pre-Arrival Sequence",
+            "Guest Review Request + Response Automation",
+            "Restaurant Reservation + Waitlist Manager",
+            "Upsell Agent (room upgrades, packages, tours)",
+            "Staff Roster + Shift Fill Automation",
+            "Supplier Order Automation (food & beverage)",
+            "Loyalty Program + VIP Guest Recognition",
+            "Post-Stay Follow-up + Return Offer Agent",
+            "OTA Sync Agent (Booking.com, Airbnb, Expedia)",
+            "Complaint Handling + Escalation Workflow",
+        ],
+        "questions": [
+            {"label": "Business type (Hotel, Restaurant, Tour Operator, Venue)", "type": "text"},
+            {"label": "Number of rooms / seats / capacity", "type": "text"},
+            {"label": "Current booking / PMS system", "type": "text"},
+            {"label": "OTA channels used (Booking.com, Airbnb, etc.)?", "type": "checkbox"},
+            {"label": "Guest review automation needed?", "type": "checkbox"},
+            {"label": "Upsell / package automation?", "type": "checkbox"},
+            {"label": "Staff rostering automation?", "type": "checkbox"},
+            {"label": "Loyalty program automation?", "type": "checkbox"},
+            {"label": "Supplier / inventory ordering?", "type": "checkbox"},
+            {"label": "Specific guest experience goals", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "ElevenLabs", "Stripe"],
+        "n8n_templates": [
+            "Booking confirmed → Pre-arrival email → Day-before SMS → Upsell offer",
+            "Checkout → Review request (24h) → Respond to review → Return offer",
+            "Staff no-show → Find replacement → SMS broadcast → Confirm fill",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-# ─── Supabase Client ──────────────────────────────────────────────────────────
+    "Construction & Trades": {
+        "icon": "🏗️",
+        "tag": "construction",
+        "description": "Builders, contractors, trades — quoting, scheduling, and compliance automation.",
+        "common_agents": [
+            "Lead Enquiry → Instant Quote Request → Follow-up",
+            "Job Scheduling + Crew Dispatch SMS",
+            "Quote → Acceptance → Invoice Automation",
+            "Site Safety Checklist + Induction Tracker",
+            "Variation Order Management Agent",
+            "Supplier / Subcontractor PO Automation",
+            "Progress Claim + Payment Follow-up",
+            "Licence & Insurance Expiry Alerts",
+            "Client Progress Photo + Update Broadcaster",
+            "Defect / Warranty Request Handler",
+        ],
+        "questions": [
+            {"label": "Trade type (Builder, Electrician, Plumber, Civil, Multi-trade)", "type": "text"},
+            {"label": "Number of active jobs at any time", "type": "text"},
+            {"label": "Number of crew / subcontractors", "type": "text"},
+            {"label": "Current job management software (Buildertrend, Tradify, etc.)", "type": "text"},
+            {"label": "Quoting automation needed?", "type": "checkbox"},
+            {"label": "Job scheduling + crew SMS dispatch?", "type": "checkbox"},
+            {"label": "Progress claims + invoice follow-up?", "type": "checkbox"},
+            {"label": "Site safety compliance tracking?", "type": "checkbox"},
+            {"label": "Subcontractor / supplier management?", "type": "checkbox"},
+            {"label": "Client communication automation?", "type": "checkbox"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "Xero API", "Coolify"],
+        "n8n_templates": [
+            "New lead → Instant reply → Book site visit → Send quote → Follow-up",
+            "Job approved → Schedule crew → SMS dispatch → Client confirm",
+            "Invoice sent → 7d unpaid → Reminder → 14d → SMS → 30d → Escalate",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-def _get_supabase():
-    def _s(key):
-        try:
-            return st.secrets.get(key, os.environ.get(key, ""))
-        except Exception:
-            return os.environ.get(key, "")
+    "Finance & Insurance": {
+        "icon": "💰",
+        "tag": "finance",
+        "description": "Brokers, advisers, insurers — lead nurture, compliance, and client automation.",
+        "common_agents": [
+            "Lead Enquiry → Fact Find → Book Appointment",
+            "Policy Renewal Reminder + Upsell Agent",
+            "Compliance Document Collection + Chasing",
+            "Claims Lodgement + Status Update Agent",
+            "Annual Review Reminder + Scheduling",
+            "New Client Onboarding Workflow",
+            "Referral Partner Nurture Sequence",
+            "Rate Change Alert + Client Notification",
+            "Statement of Advice (SOA) Progress Tracker",
+            "Anti-Money Laundering (AML) Check Automation",
+        ],
+        "questions": [
+            {"label": "Business type (Mortgage Broker, Financial Adviser, Insurer, Accountant)", "type": "text"},
+            {"label": "Number of active clients", "type": "text"},
+            {"label": "Current CRM / practice management system", "type": "text"},
+            {"label": "AFSL / credit licence compliance automation needed?", "type": "checkbox"},
+            {"label": "Policy / loan renewal automation?", "type": "checkbox"},
+            {"label": "Lead nurture + appointment booking?", "type": "checkbox"},
+            {"label": "Annual client review automation?", "type": "checkbox"},
+            {"label": "Referral partner tracking?", "type": "checkbox"},
+            {"label": "Claims / application status updates to clients?", "type": "checkbox"},
+            {"label": "Specific compliance requirements (ASIC, APRA, etc.)", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "DocuSign API", "Xero API"],
+        "n8n_templates": [
+            "New lead → Instant reply → Fact find form → Book appointment → Confirm",
+            "Policy renewal due 60d → Email → 30d → SMS → 7d → Call agent",
+            "Annual review due → Book appointment → Send prep pack → Follow-up",
+        ],
+        "default_hosting": "Hostinger VPS",
+    },
 
-    url = _s("SUPABASE_URL") or st.session_state.get("settings", {}).get("supabase_url")
-    key = _s("SUPABASE_SERVICE_KEY") or st.session_state.get("settings", {}).get("supabase_service_key")
-    if not url or not key:
-        return None
-    try:
-        from supabase import create_client
-        return create_client(url, key)
-    except Exception:
-        return None
+    "Aged Care & NDIS": {
+        "icon": "🤝",
+        "tag": "agedcare",
+        "description": "Aged care providers, NDIS operators — participant management, rostering, and compliance.",
+        "common_agents": [
+            "New Participant Intake + NDIS Plan Verification",
+            "Support Worker Rostering + Shift Fill SMS",
+            "Care Plan Review Reminder + Scheduling",
+            "Incident Report → Triage → Notify + Log",
+            "Invoice → NDIS Portal Claiming Automation",
+            "Participant Progress Note Summariser (AI)",
+            "Family / Guardian Update Broadcaster",
+            "Worker Compliance + Training Expiry Alerts",
+            "Complaint Handling + Escalation Workflow",
+            "Support Coordination Referral Tracker",
+        ],
+        "questions": [
+            {"label": "Service type (NDIS, Home Care, Residential, Support Coordination)", "type": "text"},
+            {"label": "Number of participants / residents", "type": "text"},
+            {"label": "Number of support workers", "type": "text"},
+            {"label": "Current rostering / care management system", "type": "text"},
+            {"label": "NDIS claiming automation needed?", "type": "checkbox"},
+            {"label": "Incident reporting + compliance automation?", "type": "checkbox"},
+            {"label": "Support worker rostering + SMS dispatch?", "type": "checkbox"},
+            {"label": "Family communication automation?", "type": "checkbox"},
+            {"label": "AI progress note summarisation?", "type": "checkbox"},
+            {"label": "Worker credential / training tracking?", "type": "checkbox"},
+            {"label": "Specific NDIS Quality & Safeguards requirements", "type": "textarea"},
+        ],
+        "tech_stack": ["n8n", "Supabase", "Twilio", "ElevenLabs", "NDIS API"],
+        "n8n_templates": [
+            "New referral → Intake form → NDIS verification → Welcome pack → Onboard",
+            "Shift unfilled → SMS broadcast to available workers → Confirm fill → Notify participant",
+            "Incident reported → Classify → Notify coordinator → Log → Generate report",
+        ],
+        "default_hosting": "Hostinger VPS (Australian data centre)",
+    },
+}
+
+
+def get_playbook(industry: str) -> dict:
+    return PLAYBOOKS.get(industry, {
+        "icon": "🔧",
+        "tag": "custom",
+        "description": "Custom build — fill in the requirements below.",
+        "common_agents": [],
+        "questions": [{"label": "Paste full requirements or brief here", "type": "textarea"}],
+        "tech_stack": ["n8n", "Supabase", "Coolify"],
+        "n8n_templates": [],
+        "default_hosting": "Hostinger VPS",
+    })
+
+
+def list_industries():
+    return list(PLAYBOOKS.keys()) + ["Other / Custom"]
