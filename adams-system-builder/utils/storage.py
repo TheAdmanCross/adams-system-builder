@@ -103,7 +103,9 @@ def _load_projects():
     return []
 
 def save_project(project: dict):
-    project["created_at"] = datetime.utcnow().isoformat()
+    if not project.get("created_at"):
+        project["created_at"] = datetime.utcnow().isoformat()
+    project["updated_at"] = datetime.utcnow().isoformat()
     project["owner"] = st.session_state.get("user", {}).get("email", "adam")
     try:
         client = _get_supabase()
@@ -115,7 +117,13 @@ def save_project(project: dict):
         pass
     if "projects" not in st.session_state:
         st.session_state.projects = []
-    st.session_state.projects.insert(0, project)
+    # Update existing or insert
+    existing = [p for p in st.session_state.projects if p.get("id") == project.get("id")]
+    if existing:
+        idx = st.session_state.projects.index(existing[0])
+        st.session_state.projects[idx] = project
+    else:
+        st.session_state.projects.insert(0, project)
     return project
 
 def get_projects():
