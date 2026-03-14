@@ -34,6 +34,9 @@ NAV_OPTIONS = [
     "⚙️  Settings",
 ]
 
+# ─── Handle programmatic navigation (_goto = index of NAV_OPTIONS) ────────────
+default_index = st.session_state.pop("_goto", 0)
+
 # Sidebar
 with st.sidebar:
     st.markdown(f"""
@@ -50,8 +53,8 @@ with st.sidebar:
     page = st.radio(
         "",
         NAV_OPTIONS,
+        index=default_index,
         label_visibility="collapsed",
-        key="nav_page",
     )
 
     st.markdown("---")
