@@ -29,7 +29,6 @@ def init_auth():
         _handle_callback(params["code"])
 
 def _get_redirect_uri():
-    # Always fall back to production URL — never localhost
     return _secret("REDIRECT_URI", PRODUCTION_URL)
 
 def _build_auth_url():
@@ -115,15 +114,4 @@ def render_login_page():
     auth_url = _build_auth_url()
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
-        # window.top.location.href escapes Streamlit's iframe completely
-        st.markdown(f"""
-        <button onclick="window.top.location.href='{auth_url}'"
-        style="display:block;width:100%;text-align:center;cursor:pointer;
-        background:#fff;color:#333;padding:14px 28px;border-radius:8px;font-weight:600;
-        border:2px solid #ddd;font-size:1rem;
-        box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-            <img src="https://www.google.com/favicon.ico"
-            style="width:18px;vertical-align:middle;margin-right:8px;"/>
-            Sign in with Google
-        </button>
-        """, unsafe_allow_html=True)
+        st.link_button("🔑  Sign in with Google", auth_url, use_container_width=True)
