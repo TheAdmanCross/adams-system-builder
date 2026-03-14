@@ -1,129 +1,172 @@
-"""
-Google OAuth for Streamlit Cloud.
-Streamlit Cloud resets session on redirect, so we skip state validation.
-Security is maintained by locking to ALLOWED_EMAILS only.
-"""
 import streamlit as st
-import os
-import requests
-from urllib.parse import urlencode
-import secrets
 
-GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
-
-PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
-
-def _secret(key: str, default: str = "") -> str:
-    try:
-        return st.secrets.get(key, os.environ.get(key, default))
-    except Exception:
-        return os.environ.get(key, default)
-
-def init_auth():
-    if "user" not in st.session_state:
-        st.session_state.user = None
-    params = st.query_params
-    if "code" in params:
-        _handle_callback(params["code"])
-
-def _get_redirect_uri():
-    # Always fall back to production URL — never localhost
-    return _secret("REDIRECT_URI", PRODUCTION_URL)
-
-def _build_auth_url():
-    params = {
-        "client_id":     _secret("GOOGLE_CLIENT_ID"),
-        "redirect_uri":  _get_redirect_uri(),
-        "response_type": "code",
-        "scope":         "openid email profile",
-        "state":         secrets.token_urlsafe(16),
-        "access_type":   "offline",
-        "prompt":        "select_account",
-    }
-    return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
-
-def _handle_callback(code: str):
-    try:
-        token_resp = requests.post(GOOGLE_TOKEN_URL, data={
-            "code":          code,
-            "client_id":     _secret("GOOGLE_CLIENT_ID"),
-            "client_secret": _secret("GOOGLE_CLIENT_SECRET"),
-            "redirect_uri":  _get_redirect_uri(),
-            "grant_type":    "authorization_code",
-        }, timeout=10)
-        token_data = token_resp.json()
-        access_token = token_data.get("access_token")
-
-        if not access_token:
-            st.error(f"Login failed: {token_data.get('error', 'unknown')}. Please try again.")
-            st.query_params.clear()
-            return
-
-        user_resp = requests.get(
-            GOOGLE_USERINFO_URL,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=10,
-        )
-        user = user_resp.json()
-
-        allowed = _secret("ALLOWED_EMAILS", "")
-        if allowed:
-            allowed_list = [e.strip().lower() for e in allowed.split(",")]
-            if user.get("email", "").lower() not in allowed_list:
-                st.error(f"Access denied for {user.get('email')}.")
-                st.query_params.clear()
-                st.stop()
-
-        st.session_state.user = user
-        st.query_params.clear()
-        st.rerun()
-
-    except Exception as e:
-        st.error(f"Login error: {e}")
-        st.query_params.clear()
-
-def is_authenticated() -> bool:
-    return st.session_state.get("user") is not None
-
-def get_user() -> dict:
-    return st.session_state.get("user", {})
-
-def render_login_page():
-    client_id = _secret("GOOGLE_CLIENT_ID")
-
+def inject_styles():
+    # Inject Google Fonts via <link> — avoids @import rendering as visible text in Streamlit
     st.markdown("""
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-    min-height:80vh;gap:24px;text-align:center;">
-        <div style="font-size:72px;">⚡</div>
-        <h1 style="font-family:'Space Grotesk',sans-serif;font-size:2.8rem;margin:0;
-        background:linear-gradient(135deg,#ff4d4d,#ff8c00);
-        -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-            Adam's System Builder
-        </h1>
-        <p style="color:#888;font-size:1.1rem;margin:0;">
-            Agentic AI webapp factory — n8n · Coolify · Supabase · Claude Code
-        </p>
-    </div>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     """, unsafe_allow_html=True)
 
-    if not client_id:
-        st.warning("GOOGLE_CLIENT_ID not configured. Add it in Streamlit Settings → Secrets.")
-        return
+    st.markdown("""<style>
+    /* ─── Base ─── */
+    .stApp { background: #0a0a0f !important; }
+    .main .block-container { padding: 2rem 2.5rem; max-width: 1400px; }
+    * { font-family: 'Space Grotesk', sans-serif !important; }
+    code, pre, .stCode * { font-family: 'JetBrains Mono', monospace !important; }
 
-    auth_url = _build_auth_url()
-    col1, col2, col3 = st.columns([2, 1, 2])
-    with col2:
-        # window.top.location.href escapes Streamlit's iframe completely
-        st.markdown(f"""
-        <button onclick="window.top.location.href='{auth_url}'"
-        style="display:block;width:100%;text-align:center;cursor:pointer;
-        background:#fff;color:#333;padding:14px 28px;border-radius:8px;font-weight:600;
-        border:2px solid #ddd;font-size:1rem;
-        box-shadow:0 2px 8px rgba(0,0,0,0.15);">
-            <img src="https://www.google.com/favicon.ico"
-            style="width:18px;vertical-align:middle;margin-right:8px;"/>
-            Sign in with Google
-        </button>
-        """, unsafe_allow_html=True)
+    /* ─── Sidebar ─── */
+    [data-testid="stSidebar"] {
+        background: #0f0f1a !important;
+        border-right: 1px solid #1e1e30 !important;
+    }
+    [data-testid="stSidebar"] .stRadio label {
+        color: #aaa !important;
+        font-size: 0.95rem !important;
+        padding: 8px 12px !important;
+        border-radius: 6px !important;
+        transition: all 0.2s !important;
+    }
+    [data-testid="stSidebar"] .stRadio label:hover { color: #fff !important; background: #1e1e30 !important; }
+    [data-testid="stSidebar"] .stRadio [aria-checked="true"] label {
+        color: #ff4d4d !important;
+        background: rgba(255,77,77,0.1) !important;
+        border-left: 3px solid #ff4d4d !important;
+    }
+
+    /* ─── Sidebar User Card ─── */
+    .sidebar-user { display: flex; align-items: center; gap: 12px; padding: 16px 0; margin-bottom: 8px; }
+    .avatar { width: 42px; height: 42px; border-radius: 50%; border: 2px solid #ff4d4d; }
+    .user-name { color: #fff; font-weight: 600; font-size: 0.95rem; }
+    .user-email { color: #666; font-size: 0.75rem; }
+    .sidebar-footer { color: #555; font-size: 0.75rem; padding-top: 8px; line-height: 1.8; }
+
+    /* ─── Status Dots ─── */
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-dot.green { background: #00ff88; box-shadow: 0 0 6px #00ff88; }
+    .status-dot.red   { background: #ff4d4d; box-shadow: 0 0 6px #ff4d4d; }
+    .status-dot.amber { background: #ffaa00; box-shadow: 0 0 6px #ffaa00; }
+
+    /* ─── Headers ─── */
+    h1, h2, h3 { color: #fff !important; font-weight: 700 !important; }
+    h1 { font-size: 2rem !important; }
+    h2 { font-size: 1.4rem !important; border-bottom: 1px solid #1e1e30; padding-bottom: 12px; margin-bottom: 20px !important; }
+
+    /* ─── Cards ─── */
+    .card {
+        background: #0f0f1a;
+        border: 1px solid #1e1e30;
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 16px;
+        transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #ff4d4d40; }
+    .card-title { color: #fff; font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .card-sub { color: #666; font-size: 0.82rem; }
+
+    /* ─── Metric Cards ─── */
+    .metric-card {
+        background: linear-gradient(135deg, #0f0f1a, #15152a);
+        border: 1px solid #1e1e30;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+    }
+    .metric-value { font-size: 2.2rem; font-weight: 700; color: #fff; }
+    .metric-label { color: #666; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+    .metric-delta { font-size: 0.82rem; margin-top: 6px; }
+    .metric-delta.up   { color: #00ff88; }
+    .metric-delta.down { color: #ff4d4d; }
+
+    /* ─── Inputs ─── */
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {
+        background: #0f0f1a !important;
+        border: 1px solid #2a2a40 !important;
+        border-radius: 8px !important;
+        color: #fff !important;
+        font-size: 0.9rem !important;
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #ff4d4d !important;
+        box-shadow: 0 0 0 2px rgba(255,77,77,0.15) !important;
+    }
+    label, .stSelectbox label { color: #aaa !important; font-size: 0.85rem !important; }
+
+    /* ─── Buttons ─── */
+    .stButton button {
+        background: #1a1a2e !important;
+        border: 1px solid #2a2a40 !important;
+        color: #fff !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s !important;
+    }
+    .stButton button:hover { border-color: #ff4d4d !important; color: #ff4d4d !important; }
+    .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #ff4d4d, #ff2222) !important;
+        border: none !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+    }
+    .stButton button[kind="primary"]:hover { box-shadow: 0 4px 20px rgba(255,77,77,0.4) !important; transform: translateY(-1px); }
+
+    /* ─── Alerts ─── */
+    .stSuccess { background: rgba(0,255,136,0.08) !important; border-left: 4px solid #00ff88 !important; border-radius: 8px !important; }
+    .stWarning { background: rgba(255,170,0,0.08) !important; border-left: 4px solid #ffaa00 !important; border-radius: 8px !important; }
+    .stError   { background: rgba(255,77,77,0.08)  !important; border-left: 4px solid #ff4d4d !important; border-radius: 8px !important; }
+    .stInfo    { background: rgba(0,150,255,0.08)  !important; border-left: 4px solid #0096ff !important; border-radius: 8px !important; }
+
+    /* ─── Code blocks ─── */
+    .stCodeBlock { background: #050508 !important; border: 1px solid #1e1e30 !important; border-radius: 8px !important; }
+
+    /* ─── Tabs ─── */
+    .stTabs [data-baseweb="tab"] { color: #666 !important; }
+    .stTabs [aria-selected="true"] { color: #ff4d4d !important; border-bottom-color: #ff4d4d !important; }
+
+    /* ─── Checkboxes ─── */
+    .stCheckbox label { color: #aaa !important; }
+
+    /* ─── Tag pills ─── */
+    .tag {
+        display: inline-block;
+        background: rgba(255,77,77,0.1);
+        color: #ff4d4d;
+        border: 1px solid rgba(255,77,77,0.3);
+        border-radius: 20px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin: 2px;
+    }
+    .tag.green { background: rgba(0,255,136,0.1); color: #00ff88; border-color: rgba(0,255,136,0.3); }
+    .tag.amber { background: rgba(255,170,0,0.1); color: #ffaa00; border-color: rgba(255,170,0,0.3); }
+    .tag.blue  { background: rgba(0,150,255,0.1); color: #0096ff; border-color: rgba(0,150,255,0.3); }
+
+    /* ─── Output box ─── */
+    .output-box {
+        background: #050508;
+        border: 1px solid #1e1e30;
+        border-radius: 8px;
+        padding: 20px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.82rem;
+        color: #00ff88;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        max-height: 400px;
+        overflow-y: auto;
+        margin: 12px 0;
+    }
+
+    /* ─── Divider ─── */
+    hr { border-color: #1e1e30 !important; }
+
+    /* ─── Hide Streamlit sidebar toggle ─── */
+    button[data-testid="collapsedControl"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+
+    /* ─── Expander ─── */
+    .streamlit-expanderHeader { color: #aaa !important; }
+    </style>""", unsafe_allow_html=True)
