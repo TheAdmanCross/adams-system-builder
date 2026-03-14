@@ -1,87 +1,117 @@
+"""
+Google OAuth for Streamlit Cloud.
+Streamlit Cloud resets session on redirect, so we skip state validation.
+Security is maintained by locking to ALLOWED_EMAILS only.
+"""
 import streamlit as st
 import os
-from utils.auth import init_auth, render_login_page, is_authenticated, get_user
-from utils.storage import init_storage
-from utils.styles import inject_styles
+import requests
+from urllib.parse import urlencode
+import secrets
 
-# ─── Page Config ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Adam's System Builder",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-# ─── Init ─────────────────────────────────────────────────────────────────────
-init_auth()
-inject_styles()
+PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
 
-# ─── Auth Gate ────────────────────────────────────────────────────────────────
-if not is_authenticated():
-    render_login_page()
-    st.stop()
+def _secret(key: str, default: str = "") -> str:
+    try:
+        return st.secrets.get(key, os.environ.get(key, default))
+    except Exception:
+        return os.environ.get(key, default)
 
-# ─── Authenticated App ────────────────────────────────────────────────────────
-user = get_user()
-init_storage()
+def init_auth():
+    if "user" not in st.session_state:
+        st.session_state.user = None
+    params = st.query_params
+    if "code" in params:
+        _handle_callback(params["code"])
 
-NAV_OPTIONS = [
-    "🏠  Dashboard",
-    "➕  New Customer",
-    "📋  Questionnaire",
-    "🤖  Agent Builder",
-    "🚀  Generate & Deploy",
-    "⚙️  Settings",
-]
+def _get_redirect_uri():
+    return _secret("REDIRECT_URI", PRODUCTION_URL)
 
-# ─── Handle programmatic navigation (_goto = index of NAV_OPTIONS) ────────────
-default_index = st.session_state.pop("_goto", 0)
+def _build_auth_url():
+    params = {
+        "client_id":     _secret("GOOGLE_CLIENT_ID"),
+        "redirect_uri":  _get_redirect_uri(),
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "state":         secrets.token_urlsafe(16),
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    }
+    return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
-# Sidebar
-with st.sidebar:
-    st.markdown(f"""
-    <div class="sidebar-user">
-        <img src="{user.get('picture','')}" class="avatar" onerror="this.style.display='none'"/>
-        <div>
-            <div class="user-name">{user.get('name','Adam')}</div>
-            <div class="user-email">{user.get('email','')}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+def _handle_callback(code: str):
+    try:
+        token_resp = requests.post(GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     _secret("GOOGLE_CLIENT_ID"),
+            "client_secret": _secret("GOOGLE_CLIENT_SECRET"),
+            "redirect_uri":  _get_redirect_uri(),
+            "grant_type":    "authorization_code",
+        }, timeout=10)
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
 
-    st.markdown("---")
-    page = st.radio(
-        "",
-        NAV_OPTIONS,
-        index=default_index,
-        label_visibility="collapsed",
-    )
+        if not access_token:
+            st.error(f"Login failed: {token_data.get('error', 'unknown')}. Please try again.")
+            st.query_params.clear()
+            return
 
-    st.markdown("---")
-    if st.button("🚪 Logout", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+        user_resp = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        user = user_resp.json()
+
+        allowed = _secret("ALLOWED_EMAILS", "")
+        if allowed:
+            allowed_list = [e.strip().lower() for e in allowed.split(",")]
+            if user.get("email", "").lower() not in allowed_list:
+                st.error(f"Access denied for {user.get('email')}.")
+                st.query_params.clear()
+                st.stop()
+
+        st.session_state.user = user
+        st.query_params.clear()
         st.rerun()
 
+    except Exception as e:
+        st.error(f"Login error: {e}")
+        st.query_params.clear()
+
+def is_authenticated() -> bool:
+    return st.session_state.get("user") is not None
+
+def get_user() -> dict:
+    return st.session_state.get("user", {})
+
+def render_login_page():
+    client_id = _secret("GOOGLE_CLIENT_ID")
+
     st.markdown("""
-    <div class="sidebar-footer">
-        <span class="status-dot green"></span> System Builder v2.0<br/>
-        <small>Hostinger · Coolify · n8n · Supabase</small>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:80vh;gap:24px;text-align:center;">
+        <div style="font-size:72px;">⚡</div>
+        <h1 style="font-family:'Space Grotesk',sans-serif;font-size:2.8rem;margin:0;
+        background:linear-gradient(135deg,#ff4d4d,#ff8c00);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+            Adam's System Builder
+        </h1>
+        <p style="color:#888;font-size:1.1rem;margin:0;">
+            Agentic AI webapp factory — n8n · Coolify · Supabase · Claude Code
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-# ─── Page Router ──────────────────────────────────────────────────────────────
-clean_page = page.split("  ", 1)[-1]
+    if not client_id:
+        st.warning("GOOGLE_CLIENT_ID not configured. Add it in Streamlit Settings → Secrets.")
+        return
 
-if clean_page == "Dashboard":
-    from pages import dashboard; dashboard.render()
-elif clean_page == "New Customer":
-    from pages import intake; intake.render()
-elif clean_page == "Questionnaire":
-    from pages import questionnaire; questionnaire.render()
-elif clean_page == "Agent Builder":
-    from pages import agent_builder; agent_builder.render()
-elif clean_page == "Generate & Deploy":
-    from pages import generate; generate.render()
-elif clean_page == "Settings":
-    from pages import settings; settings.render()
+    auth_url = _build_auth_url()
+    col1, col2, col3 = st.columns([2, 1, 2])
+    with col2:
+        st.link_button("🔑  Sign in with Google", auth_url, use_container_width=True)
