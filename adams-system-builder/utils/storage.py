@@ -1,6 +1,8 @@
 """
 Supabase storage layer.
-Falls back to session_state if Supabase is not configured (safe for first run).
+Projects table schema: id (uuid), owner (text), created_at (timestamptz), data (jsonb)
+Settings table schema: key (text), value (text), updated_at (timestamptz)
+Falls back to session_state if Supabase is not configured.
 """
 import streamlit as st
 import os, json
@@ -45,8 +47,10 @@ def _load_settings():
     try:
         client = _get_supabase()
         if client:
-            resp = client.table("settings").select("*").eq("key", _settings_key()).maybe_single().execute()
-            if resp.data:
+            resp = client.table("settings").select("value").eq(
+                "key", _settings_key()
+            ).maybe_single().execute()
+            if resp and resp.data:
                 return {**defaults, **json.loads(resp.data.get("value", "{}"))}
     except Exception:
         pass
@@ -57,7 +61,10 @@ def save_settings(data: dict):
     try:
         client = _get_supabase()
         if client:
-            client.table("settings").upsert({"key": _settings_key(), "value": json.dumps(data)}).execute()
+            client.table("settings").upsert({
+                "key": _settings_key(),
+                "value": json.dumps(data)
+            }).execute()
     except Exception:
         pass
 
@@ -91,34 +98,62 @@ def save_custom_industries(industries: list):
         pass
 
 # ─── Projects ─────────────────────────────────────────────────────────────────
+# Schema: id (uuid), owner (text), created_at (timestamptz), data (jsonb)
+# All project fields stored inside the data jsonb column.
 
-def _load_projects():
+def _load_projects() -> list:
     try:
         client = _get_supabase()
         if client:
-            resp = client.table("projects").select("*").order("created_at", desc=True).execute()
-            return resp.data or []
+            owner = st.session_state.get("user", {}).get("email", "adam")
+            resp = client.table("projects").select("*").eq(
+                "owner", owner
+            ).order("created_at", desc=True).execute()
+            if resp and resp.data:
+                projects = []
+                for row in resp.data:
+                    project = row.get("data", {}) or {}
+                    project["id"] = row["id"]
+                    project["owner"] = row["owner"]
+                    project["created_at"] = row["created_at"]
+                    projects.append(project)
+                return projects
     except Exception:
         pass
     return []
 
-def save_project(project: dict):
+def save_project(project: dict) -> dict:
+    owner = st.session_state.get("user", {}).get("email", "adam")
+    project_id = project.get("id")
+    if not project_id:
+        import uuid
+        project_id = str(uuid.uuid4())
+        project["id"] = project_id
+
     if not project.get("created_at"):
         project["created_at"] = datetime.utcnow().isoformat()
     project["updated_at"] = datetime.utcnow().isoformat()
-    project["owner"] = st.session_state.get("user", {}).get("email", "adam")
+
+    # Store everything in data column
+    row = {
+        "id": project_id,
+        "owner": owner,
+        "data": project,
+    }
+
     try:
         client = _get_supabase()
         if client:
-            resp = client.table("projects").upsert(project).execute()
+            client.table("projects").upsert(row).execute()
             st.session_state.projects = _load_projects()
-            return resp.data[0] if resp.data else project
+            return project
     except Exception:
         pass
+
+    # Fallback to session state
     if "projects" not in st.session_state:
         st.session_state.projects = []
-    # Update existing or insert
-    existing = [p for p in st.session_state.projects if p.get("id") == project.get("id")]
+    existing = [p for p in st.session_state.projects if p.get("id") == project_id]
     if existing:
         idx = st.session_state.projects.index(existing[0])
         st.session_state.projects[idx] = project
@@ -126,7 +161,7 @@ def save_project(project: dict):
         st.session_state.projects.insert(0, project)
     return project
 
-def get_projects():
+def get_projects() -> list:
     return st.session_state.get("projects", [])
 
 def delete_project(project_id: str):
@@ -134,6 +169,8 @@ def delete_project(project_id: str):
         client = _get_supabase()
         if client:
             client.table("projects").delete().eq("id", project_id).execute()
+            st.session_state.projects = _load_projects()
+            return
     except Exception:
         pass
     st.session_state.projects = [
