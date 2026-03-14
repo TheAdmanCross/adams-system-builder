@@ -1,12 +1,16 @@
 """
 Google OAuth for Streamlit Cloud.
-Streamlit Cloud resets session on redirect, so we skip state validation.
-Security is maintained by locking to ALLOWED_EMAILS only.
+Session is persisted in an encrypted browser cookie so page refreshes
+don't log the user out. Cookie expires after 7 days.
 """
 import streamlit as st
 import os
 import requests
+import json
+import base64
+import hashlib
 from urllib.parse import urlencode
+from datetime import datetime, timedelta
 import secrets
 
 GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -14,6 +18,9 @@ GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
+COOKIE_NAME    = "asb_session_v1"
+COOKIE_DAYS    = 7
+
 
 def _secret(key: str, default: str = "") -> str:
     try:
@@ -21,15 +28,70 @@ def _secret(key: str, default: str = "") -> str:
     except Exception:
         return os.environ.get(key, default)
 
+
+# ─── Cookie helpers ───────────────────────────────────────────────────────────
+
+@st.cache_resource
+def _cookie_manager():
+    import extra_streamlit_components as stx
+    return stx.CookieManager()
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+    secret = _secret("GOOGLE_CLIENT_SECRET", "adam-system-builder-fallback-key!")
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+    return Fernet(key)
+
+
+def _save_cookie(user: dict):
+    try:
+        token = _fernet().encrypt(json.dumps(user).encode()).decode()
+        expiry = datetime.now() + timedelta(days=COOKIE_DAYS)
+        _cookie_manager().set(COOKIE_NAME, token, expires_at=expiry)
+    except Exception:
+        pass
+
+
+def _load_cookie() -> dict:
+    try:
+        token = _cookie_manager().get(COOKIE_NAME)
+        if token:
+            return json.loads(_fernet().decrypt(token.encode()).decode())
+    except Exception:
+        pass
+    return None
+
+
+def _clear_cookie():
+    try:
+        _cookie_manager().delete(COOKIE_NAME)
+    except Exception:
+        pass
+
+
+# ─── Auth core ────────────────────────────────────────────────────────────────
+
 def init_auth():
     if "user" not in st.session_state:
         st.session_state.user = None
+
+    # Restore session from cookie on page refresh
+    if not st.session_state.user:
+        saved = _load_cookie()
+        if saved:
+            st.session_state.user = saved
+            return
+
+    # Handle OAuth callback
     params = st.query_params
     if "code" in params:
         _handle_callback(params["code"])
 
+
 def _get_redirect_uri():
     return _secret("REDIRECT_URI", PRODUCTION_URL)
+
 
 def _build_auth_url():
     params = {
@@ -42,6 +104,7 @@ def _build_auth_url():
         "prompt":        "select_account",
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+
 
 def _handle_callback(code: str):
     try:
@@ -76,6 +139,7 @@ def _handle_callback(code: str):
                 st.stop()
 
         st.session_state.user = user
+        _save_cookie(user)          # ← persist session to browser cookie
         st.query_params.clear()
         st.rerun()
 
@@ -83,11 +147,21 @@ def _handle_callback(code: str):
         st.error(f"Login error: {e}")
         st.query_params.clear()
 
+
 def is_authenticated() -> bool:
     return st.session_state.get("user") is not None
 
+
 def get_user() -> dict:
     return st.session_state.get("user", {})
+
+
+def logout():
+    """Call this instead of manually clearing session state."""
+    _clear_cookie()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
 
 def render_login_page():
     client_id = _secret("GOOGLE_CLIENT_ID")
