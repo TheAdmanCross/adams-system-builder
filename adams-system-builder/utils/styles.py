@@ -1,8 +1,14 @@
 import streamlit as st
 
 def inject_styles():
+    # Inject Google Fonts via <link> — avoids Streamlit rendering @import as visible text
+    st.markdown("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    """, unsafe_allow_html=True)
+
     st.markdown("""<style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
     /* ─── Base ─── */
     .stApp { background: #0a0a0f !important; }
     .main .block-container { padding: 2rem 2.5rem; max-width: 1400px; }
@@ -159,12 +165,11 @@ def inject_styles():
 
     /* ─── Divider ─── */
     hr { border-color: #1e1e30 !important; }
-    
-    /* Hide Streamlit sidebar toggle text */
-button[data-testid="collapsedControl"] { display: none !important; }
-[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+
+    /* ─── Hide Streamlit sidebar toggle ─── */
+    button[data-testid="collapsedControl"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
 
     /* ─── Expander ─── */
     .streamlit-expanderHeader { color: #aaa !important; }
-    </style>
-    """, unsafe_allow_html=True)
+    </style>""", unsafe_allow_html=True)
