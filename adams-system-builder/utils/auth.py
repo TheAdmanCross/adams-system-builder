@@ -9,9 +9,11 @@ import requests
 from urllib.parse import urlencode
 import secrets
 
-GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_AUTH_URL     = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+PRODUCTION_URL = "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app"
 
 def _secret(key: str, default: str = "") -> str:
     try:
@@ -27,42 +29,42 @@ def init_auth():
         _handle_callback(params["code"])
 
 def _get_redirect_uri():
-    return _secret("REDIRECT_URI", "https://adams-system-builder-neohc9braugjzjqhogvxfs.streamlit.app")
+    # Always fall back to production URL — never localhost
+    return _secret("REDIRECT_URI", PRODUCTION_URL)
 
 def _build_auth_url():
-    state = secrets.token_urlsafe(16)
     params = {
-        "client_id": _secret("GOOGLE_CLIENT_ID"),
-        "redirect_uri": _get_redirect_uri(),
+        "client_id":     _secret("GOOGLE_CLIENT_ID"),
+        "redirect_uri":  _get_redirect_uri(),
         "response_type": "code",
-        "scope": "openid email profile",
-        "state": state,
-        "access_type": "offline",
-        "prompt": "select_account",
+        "scope":         "openid email profile",
+        "state":         secrets.token_urlsafe(16),
+        "access_type":   "offline",
+        "prompt":        "select_account",
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 def _handle_callback(code: str):
     try:
         token_resp = requests.post(GOOGLE_TOKEN_URL, data={
-            "code": code,
-            "client_id": _secret("GOOGLE_CLIENT_ID"),
+            "code":          code,
+            "client_id":     _secret("GOOGLE_CLIENT_ID"),
             "client_secret": _secret("GOOGLE_CLIENT_SECRET"),
-            "redirect_uri": _get_redirect_uri(),
-            "grant_type": "authorization_code",
+            "redirect_uri":  _get_redirect_uri(),
+            "grant_type":    "authorization_code",
         }, timeout=10)
         token_data = token_resp.json()
         access_token = token_data.get("access_token")
 
         if not access_token:
-            st.error(f"Login failed. Please try again. ({token_data.get('error', 'unknown')})")
+            st.error(f"Login failed: {token_data.get('error', 'unknown')}. Please try again.")
             st.query_params.clear()
             return
 
         user_resp = requests.get(
             GOOGLE_USERINFO_URL,
             headers={"Authorization": f"Bearer {access_token}"},
-            timeout=10
+            timeout=10,
         )
         user = user_resp.json()
 
@@ -90,6 +92,7 @@ def get_user() -> dict:
 
 def render_login_page():
     client_id = _secret("GOOGLE_CLIENT_ID")
+
     st.markdown("""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
     min-height:80vh;gap:24px;text-align:center;">
@@ -106,13 +109,13 @@ def render_login_page():
     """, unsafe_allow_html=True)
 
     if not client_id:
-        st.warning("GOOGLE_CLIENT_ID not set. Add it in Streamlit Settings > Secrets.")
+        st.warning("GOOGLE_CLIENT_ID not configured. Add it in Streamlit Settings → Secrets.")
         return
 
     auth_url = _build_auth_url()
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
-        # Use JS window.top.location.href to break out of Streamlit's iframe
+        # window.top.location.href escapes Streamlit's iframe completely
         st.markdown(f"""
         <button onclick="window.top.location.href='{auth_url}'"
         style="display:block;width:100%;text-align:center;cursor:pointer;
