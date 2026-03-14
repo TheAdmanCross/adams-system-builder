@@ -96,16 +96,12 @@ def render():
     st.markdown("### ⚡ Quick Actions")
 
     c1, c2, c3 = st.columns(3)
-    new_customer_clicked = False
     with c1:
+        # Index 1 = "➕  New Customer" in NAV_OPTIONS
         if st.button("➕ New Customer", use_container_width=True):
-            new_customer_clicked = True
+            st.session_state["_goto"] = 1
+            st.rerun()
     with c2:
         st.link_button("📖 n8n Templates", "https://n8n.io/workflows/", use_container_width=True)
     with c3:
         st.link_button("🐇 Code Rabbit Docs", "https://coderabbit.ai", use_container_width=True)
-
-    # Navigate outside the column context so rerun works cleanly
-    if new_customer_clicked:
-        st.session_state["nav_page"] = "➕  New Customer"
-        st.rerun()
